@@ -25,12 +25,12 @@
 高等级自动继承低等级的权限点（`auth.perms_of()` 按 rank 合并），所以加角色只要往 `db.BUILTIN_ROLES` 里加一行。
 每个用户带 `email`：填了邮箱的人会按**自己的订阅词**收到摘要投递，互不打扰。
 
-第一次启动自动建一个管理员：**admin / admin123**（口令可用环境变量 `SIGNALWATCH_ADMIN_PASSWORD` 换掉）。
+第一次启动自动建一个管理员：**admin / admin123**（口令可用环境变量 `SIGNALWATCH_ADMIN_PASSWORD` 换掉）；若仍用默认口令，Web 和桌面端首次登录都会强制先改密。
 进去第一件事是改掉它——口令用 PBKDF2（12 万轮、每人独立盐）存，改了口令旧令牌立刻作废。
 
 ## 桌面端里有什么
 
-双击 `SignalWatch.exe`（或 `python run.py desktop`），第一次用 `admin / admin123` 登录，之后会记住登录直接进。
+双击 `SignalWatch.exe`（或 `python run.py desktop`），第一次用 `admin / admin123` 登录并强制改密，之后会记住登录直接进。
 
 左侧十二页：
 
@@ -77,8 +77,8 @@
 | 首轮全量抓取 | **约 5 秒**，入库 **100 条**（早期四源）；加两个政府源后又入库 46 条 |
 | 第二轮（同样 5 秒） | 新增 **0** 条 —— 去重生效 |
 | 数据库 | 156 KB → 加源后约 **200 KB**（SQLite，WAL） |
-| 单元测试 | **209 个，85 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / PWA 安装条件 / 桌面 12 页渲染 + 审计页） |
-| PDF 正文 | 巨潮公告 **有文字层**：实测 3 条共抠出 **14353 字**，网页上点「看正文」直接读全文（`pdftext.py`，纯标准库，靠 ToUnicode 还原汉字子集字体） |
+| 单元测试 | **221 个，85 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / PWA 安装条件 / 桌面 12 页渲染 + 审计页） |
+| 正文抠取 | 两条路：巨潮 PDF 走 `pdftext.py`（纯标准库，ToUnicode 还原汉字子集字体），IT之家/少数派/政采/统计局走 `enrich.html_to_text()`（去掉脚本、导航、面包屑、文末版权）。实测一轮补 30 条：抠到 **25 条 / 77307 字**，空正文 3、下载失败 2 |
 | 跨源去重 | 标题归一后 Jaccard ≥ 0.82、72 小时内、跨源才判重；早的那条留、晚的标 `dup_of` |
 | 备份 | `python run.py backup --keep 3` → `data/backups/backup-20261116-181845.db`（1068 KB）；启动时距上次超 20 小时自动备一次 |
 | 抓取成功率（近 24 小时，83 次运行） | **98.8%**，去重率 **93.5%**，平均每次 **0.86 秒** |
@@ -86,10 +86,10 @@
 | 并发写入 | 50 线程同批插入 10 条 → 库里正好 10 条，无 `database is locked` |
 | 接口压测·宿主机（`python loadtest.py`） | 30 线程 × 20 次 = **600 请求 / 2.13 秒**，**281 QPS**，p50 **103 ms** / p95 **127 ms** / p99 **138 ms**，错误 **0** |
 | 接口压测·容器（同一份代码） | **600 请求 / 10.05 秒**，**59.7 QPS**，p50 **466 ms** / p95 **1104 ms** / p99 **1290 ms**，错误 **0** —— Docker Desktop 的 Windows bind mount 让 SQLite 读慢 4–5 倍，这是实测差距，不是估算 |
-| 接口触达率 | **60/60 = 100%**（`python tools/route_coverage.py`：跑一遍测试，统计 60 条路由里有几条真被请求过） |
+| 接口触达率 | **64/64 = 100%**（`python tools/route_coverage.py`：跑一遍测试，统计 64 条路由里有几条真被请求过） |
 | 进程内指标 | `GET /api/metrics` 实测 `{"requests":603,"by_status":{"200":602},"latency_ms":{"p50":441.5,"p95":1083.5,"p99":1264.0,"samples":602}}`（容器内，压力测试后读取） |
 | 单文件 exe（PyInstaller） | `dist\SignalWatch.exe` **19.7 MB**，`serve --port 8899` 起来后 `/api/health` 返回 200；`desktop` 模式窗口能开（截图 `docs/shot-exe-desktop.png`） |
-| 自动补正文 | 开启后累计 **19 条**巨潮公告有正文（含首屏 628 / 795 字的短公告），每轮最多抠 2 条，不拖慢抓取 |
+| 自动补正文 | 开启后每轮最多抠 2 条（默认 cninfo），累计库里 **155 / 1904 条**有正文（cninfo 146、ithome 7、sspai 2）。手动 `run.py enrich --limit 30` 可批量补；`--source` 留空就覆盖所有能补的源 |
 | git | 已初始化，3 次提交，161 个文件进版本库（`.git` 17 MB），CI 配置在 `.github/workflows/tests.yml` |
 
 ## 跑起来
@@ -99,7 +99,8 @@ python run.py serve            # 网页 + API，只监听 127.0.0.1:8766
 python run.py desktop          # 桌面常驻窗口（右下角弹窗）
 python run.py crawl            # 立刻抓一轮
 python run.py stats            # 库里多少条、源健不健康
-python run.py enrich --limit 5 # 把巨潮公告的 PDF 正文抠进库
+python run.py enrich --limit 5            # 补 5 条正文（默认覆盖 PDF 与网页两类源）
+python run.py enrich --limit 20 --source ithome   # 只补 IT之家
 python run.py backup --keep 7  # 备份（另有 restore / backups）
 python run.py migrate          # 看迁移台账（只读；--check 有缺步骤则退出 1）
 ```
@@ -118,7 +119,7 @@ Windows 上双击 `启动盯梢.bat` 就是桌面版；`install_autostart.ps1` �
 
 ## 自己干活的三件事（不用你盯着）
 
-**1. 新条目自动抠正文。** 巨潮的公告是 PDF，很多浏览器里点开是空白或要下载。程序在每次抓到新条目后，顺手抠 2 条 PDF 的文字层（`data` 里那几条），时间线卡片上就多一个「看正文（N 字）」按钮，点开直接读。开关在设置页「新条目自动抠正文」，关掉就不抓。实测一份员工持股计划公告抠出 6 千字通顺中文，比原 PDF 好读。
+**1. 新条目自动抠正文。** 巨潮的公告是 PDF（浏览器点开常常空白或要下载），IT之家/少数派是网页（正文被导航和广告裹着）。程序在每次抓到新条目后顺手抠 2 条：PDF 走文字层，网页走 `html_to_text()`（先砍 `<script>/<style>/<nav>`，只取 `<article>`，再切掉面包屑「首页 > A > B >」和文末「责任编辑/免责声明」那一段）。时间线卡片上就多一个「看正文（N 字）」按钮。开关在设置页「新条目自动抠正文」。实测一轮 30 条补出 25 条、77307 字。
 
 **2. 源连续失败会发邮件。** 连续失败到达阈值（默认 3 次）就发一封告警，同一源 6 小时内只发一封，邮件里有最后一次错误和处置建议。没有配 SMTP 就只在页面显示红条，不会假装发了。开关在设置页「源连续失败时发邮件告警」。
 
@@ -367,7 +368,8 @@ cancelled → （终态）
 ## 已知限制
 
 - **源是别人给的，随时会变**。36kr 的 `/feed` 就悄悄换成了网页，现在会直接报错而不是静默空跑；
-- 只存标题、摘要、链接；**PDF 正文抓到的会存进库**（`items.body_text`，单条最多 6000 字），不落原始 PDF 文件；自动补抓只覆盖首屏那几条，历史条目要自己跑 `run.py enrich`；
+- XML 解析优先用 defusedxml；装不上时退回标准库但**拒绝**带 `DOCTYPE/ENTITY` 声明的 feed（fail closed，挡住 billion laughs）；
+- 只存标题、摘要、链接；**抠到的正文会存进库**（`items.body_text`，单条最多 6000 字），不落原始 PDF/HTML 文件；自动补抓每轮只补 2 条，历史条目要自己跑 `run.py enrich`；网页正文是启发式抽取（不是 readability），少数版式会带上一点站点信息；
 - 桌面端也要登录（可以「以访客身份进入」只读看板），改动都会记审计；
 - 调度是进程内的：窗口和服务都关着就不抓。本机靠「开机 `start_docker.ps1` → 容器 `restart: unless-stopped`」兜住；计划任务那条路要管理员权限（本机 `schtasks` 被拒）；
 - docker 本机验过镜像构建与 `compose up`，但**没在多机器/多架构上验**（只有这台 Windows + Docker Desktop）；
@@ -389,7 +391,7 @@ src/signalwatch/
   audit.py       操作审计
   notify.py      邮件摘要投递（按人、十分钟一封、免打扰时段可配）
   pdftext.py     PDF 正文抠字（ToUnicode + 子集字体，纯标准库）
-  enrich.py      把抠出来的正文写进库，顺带补摘要
+  enrich.py      抠正文（PDF 与网页两条路）写进库，顺带补摘要
   maintenance.py 备份 / 恢复 / 定期保留 / 启动自备
   dedupe.py      跨源近重复判定（Jaccard ≥ 0.82、72 小时窗、早的留）
   xlsx.py        纯标准库写 Excel（两份导出都用它）
@@ -397,7 +399,7 @@ src/signalwatch/
   desktop.py     tkinter 十二页常驻窗口 + 浮窗提醒
   sources/       cninfo / rss / arxiv / html_list（统计局、政府采购）
   web/           index.html（时间线）、admin.html（管理台）、manifest、sw.js
-tests/           221 个用例（去重、并发、源解析、路由、权限、审计、报表、任务六态、邮件推送、配置隔离、PDF 抠字、备份恢复、跨源去重、Excel、PWA、桌面 12 页渲染）
+tests/           233 个用例（去重、并发、源解析、路由、权限、审计、报表、任务六态、邮件推送、配置隔离、PDF 抠字、备份恢复、跨源去重、Excel、PWA、桌面 12 页渲染）
 docs/            验收截图
 ```
 

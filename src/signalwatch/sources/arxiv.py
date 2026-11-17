@@ -10,7 +10,7 @@ import urllib.parse
 from dataclasses import dataclass
 
 from ..config import SETTINGS
-from .rss import _parse_date
+from .rss import _parse_date, parse_xml
 from .base import Record, http_get
 
 ATOM = "{http://www.w3.org/2005/Atom}"
@@ -38,7 +38,7 @@ class ArxivSource:
         )
         from defusedxml import ElementTree as ET
 
-        root = ET.fromstring(raw)
+        root = parse_xml(raw)
         out: list[Record] = []
         for entry in root.findall(f"{ATOM}entry"):
             eid = (entry.findtext(f"{ATOM}id") or "").strip()

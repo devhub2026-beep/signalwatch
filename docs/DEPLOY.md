@@ -20,7 +20,7 @@ Python 用项目里验过的解释器（`E:\.venv\FastAPIProject7\.venv\Scripts\
 ```bash
 python run.py serve --host 127.0.0.1 --port 8766
 # 打开 http://127.0.0.1:8766/       时间线
-# 打开 http://127.0.0.1:8766/admin  管理台（默认 admin/admin123，第一次登录后立刻改）
+# 打开 http://127.0.0.1:8766/admin  管理台（默认 admin/admin123，首次登录必须改）
 ```
 
 - 抓取调度在进程内，关掉进程就不抓了 → 长期跑用第 2 节。

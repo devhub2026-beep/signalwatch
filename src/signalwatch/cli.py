@@ -42,9 +42,9 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("restore", help="从备份恢复（会先给当前库留一份）")
     r.add_argument("file", help="备份文件路径")
     lb = sub.add_parser("backups", help="列出已有备份")
-    en = sub.add_parser("enrich", help="把公告 PDF 的正文抠进库（巨潮那些）")
+    en = sub.add_parser("enrich", help="把公告 PDF / 网页正文抠进库（默认覆盖所有能用的源）")
     en.add_argument("--limit", type=int, default=5)
-    en.add_argument("--source", default="cninfo")
+    en.add_argument("--source", default="", help="只补这个源；留空=全部可补的源")
     en.add_argument("--show", action="store_true", help="打印抓到的正文开头")
     lb.add_argument("--limit", type=int, default=20)
     return p
@@ -126,7 +126,8 @@ def _cmd_enrich(args) -> int:
     conn = connect(SETTINGS.db_path)
     try:
         init_db(conn)
-        result = enrich.enrich(conn, limit=args.limit, only=(args.source,))
+        only = (args.source,) if args.source else None
+        result = enrich.enrich(conn, limit=args.limit, only=only)
         print(
             f"[ok] 试了 {result['tried']} 条，抠到正文 {result['ok']} 条"
             f"（{result['chars']} 字），空文字层 {result['empty']}，下载失败 {result['failed']}"

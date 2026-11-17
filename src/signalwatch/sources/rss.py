@@ -11,13 +11,23 @@ import email.utils
 import re
 from dataclasses import dataclass, field
 
-# defusedxml 写在 pyproject 的 dependencies 里；但本机 pip 装不上（镜像解析卡死），
-# 所以留一条退回标准库的路，只在注释里标明风险，而不是让整个抓取起不来。
-# 生产/CI 上装了 defusedxml 就走它，能挡实体扩展这类恶意 XML。
-try:  # 有就用它
-    from defusedxml import ElementTree as ET
-except ImportError:  # 没装也照常跑，只是少一层防护
-    from xml.etree import ElementTree as ET  # type: ignore[assignment]
+# 有 defusedxml 就用它（挡实体扩展/外部实体）；装不上时退回标准库，但**拒绝**
+# 任何带 DOCTYPE/ENTITY 声明的文档 —— 那正是 billion laughs 的入口，等于 fail closed。
+try:
+    from defusedxml import ElementTree as ET  # type: ignore[import-not-found]
+    HAS_DEFUSEDXML = True
+except ImportError:                                    # pragma: no cover - 取决于环境
+    from xml.etree import ElementTree as ET            # noqa: S405
+    HAS_DEFUSEDXML = False
+
+_DECL = re.compile(r"<!(?:DOCTYPE|ENTITY)", re.I)
+
+
+def parse_xml(text: str):
+    """解析 feed；没有 defusedxml 时先自己挡住 DOCTYPE/ENTITY 声明。"""
+    if not HAS_DEFUSEDXML and _DECL.search(text):
+        raise ValueError("feed 里带 DOCTYPE/ENTITY 声明，没装 defusedxml 时拒绝解析")
+    return ET.fromstring(text)
 
 from ..config import SETTINGS
 from .base import Record, http_get
@@ -83,7 +93,7 @@ class RssSource:
             # 对方把 RSS 换成了网页（36kr 就是这样），别假装解析成功
             raise ValueError(f"{self.feed_url} 返回的不是 feed（前 80 字符：{text[:80]!r}）")
         try:
-            root = ET.fromstring(text)
+            root = parse_xml(text)
         except ET.ParseError as exc:
             raise ValueError(f"{self.feed_url} 的 XML 坏了：{exc}") from exc
         records: list[Record] = []
