@@ -126,6 +126,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\install_task.ps1 -Remove
 
 它注册的任务是 `SignalWatch.exe crawl`（没有 exe 就退回 `run.py crawl`），抓完就退出，日志追加到 `data\crawl.log`，只在当前用户登录时运行、不需要管理员权限。注意：如果当前会话被限制（比如以受限令牌跑），`schtasks` 会报 `Access is denied`，那就自己开一个普通 PowerShell 窗口跑上面那条命令。
 
+**另一条更省事的路**：把开机自启切成「后台服务」模式，登录后自己起网页+抓取、没有窗口：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install_autostart.ps1 -Mode serve
+```
+
+它写的是启动文件夹里的快捷方式（`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\signalwatch.lnk`，参数 `run.py serve`），本机已经切成这个模式了。
+
 ## 版本管理与 CI
 
 仓库是 git（`.git` 已初始化，第一次提交 161 个文件）。`.github/workflows/tests.yml` 跑三件事：
@@ -182,7 +190,7 @@ docker compose up --build      # http://127.0.0.1:8766
 - **源是别人给的，随时会变**。36kr 的 `/feed` 就悄悄换成了网页，现在会直接报错而不是静默空跑；
 - 只存标题、摘要、链接；**PDF 正文抓到的会存进库**（`items.body_text`，单条最多 6000 字），不落原始 PDF 文件；自动补抓只覆盖首屏那几条，历史条目要自己跑 `run.py enrich`；
 - 桌面端也要登录（可以「以访客身份进入」只读看板），改动都会记审计；
-- 调度是进程内的，服务/窗口停了就不抓了——要么用 `install_task.ps1` 注册计划任务、要么 Docker + `restart: unless-stopped`；
+- 调度是进程内的：窗口和服务都关着就不抓。已经在启动文件夹里配了「登录后后台起 serve」；更硬的兜底（计划任务/`restart: unless-stopped`）要管理员权限或 docker；
 - **docker 没在本机验过**（这台机器没 WSL/docker，装 WSL 要管理员 + 重启），`Dockerfile` 与 `compose.yml` 只在 CI 里构建；
 - **手机 PWA 没在真机装过**：`manifest` 与 `sw.js` 都在，但 PWA 安装要求 https 或 localhost，手机走局域网地址（http）装不上；
 - 令牌用自签 HMAC，没有刷新机制，7 天过期就得重登。
