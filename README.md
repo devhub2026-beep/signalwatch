@@ -83,6 +83,9 @@
 | 任务队列 | 优先级领取、失败可重试、可取消；实测两条任务 `done`（cninfo 30 条 / 全量 100 条） |
 | 并发写入 | 50 线程同批插入 10 条 → 库里正好 10 条，无 `database is locked` |
 | 接口压测（`python loadtest.py`） | 30 线程 × 20 次 = **600 请求 / 1.46 秒**，**410 QPS**，p50 **71 ms** / p95 **89 ms** / p99 **104 ms**，错误 **0** |
+| 单文件 exe（PyInstaller） | `dist\SignalWatch.exe` **19.7 MB**，`serve --port 8899` 起来后 `/api/health` 返回 200；`desktop` 模式窗口能开（截图 `docs/shot-exe-desktop.png`） |
+| 自动补正文 | 开启后累计 **19 条**巨潮公告有正文（含首屏 628 / 795 字的短公告），每轮最多抠 2 条，不拖慢抓取 |
+| git | 已初始化，3 次提交，161 个文件进版本库（`.git` 17 MB），CI 配置在 `.github/workflows/tests.yml` |
 
 ## 跑起来
 
