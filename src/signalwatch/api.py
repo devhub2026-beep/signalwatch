@@ -121,6 +121,11 @@ class PasswordIn(BaseModel):
     new: str = Field(min_length=6)
 
 
+# 测试期间被触达过的路由记录在这里（process 级）。tools/route_coverage.py 用它算
+# 「测试到底打到了多少条接口」——比行覆盖率便宜，也更贴近「接口有没有人验过」这个问题。
+HIT_ROUTES: set[str] = set()
+
+
 def _fill_summaries(app: FastAPI) -> int:
     """没手写 summary 的路由，用函数名转成人话，保证 openapi.json 里不留空标题。"""
     filled = 0
@@ -184,6 +189,10 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         m["by_status"][code] = m["by_status"].get(code, 0) + 1
         if counted:
             m["lat"].append(cost)
+        # 业务路由的模板在 scope["route"].path；/docs、/redoc 这类 Starlette 内置路由
+        # 不带 route，用原始路径兜底（它们本身就是固定路径，不会把 id 带进来）。
+        route = request.scope.get("route")
+        HIT_ROUTES.add(f"{request.method} {getattr(route, 'path', None) or path}")
         request.state.request_id = rid
         response.headers["X-Request-ID"] = rid
         response.headers["X-Response-Time"] = f"{cost:.1f}ms"
@@ -748,7 +757,11 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         result = enrich.enrich(crawler.conn, limit=limit, only=(source,))
         audit.log(crawler.conn, actor["username"], "items.enrich", source,
                   f"试 {result['tried']} 得 {result['ok']}")
-        return {"ok": True, **result}
+        # enrich 自己也返回一个 "ok"（成功抠到几条），别让它把响应里的 ok 覆盖成数字
+        body = dict(result)
+        body["succeeded"] = body.pop("ok", 0)
+        body["ok"] = True
+        return body
 
     @app.get("/api/events/stats")
     def events_stats(request: Request):

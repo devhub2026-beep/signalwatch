@@ -34,6 +34,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("stats", help="库里有多少条")
     sub.add_parser("sources", help="源的运行状态")
     sub.add_parser("db", help="打印数据库路径")
+    mg = sub.add_parser("migrate", help="看迁移台账（--check 用于 CI/发布前检查）")
+    mg.add_argument("--check", action="store_true", help="有未记录的步骤就退出 1")
+    mg.add_argument("--json", action="store_true", help="输出 JSON")
     b = sub.add_parser("backup", help="备份数据库到 data/backups")
     b.add_argument("--keep", type=int, default=7, help="保留最近几份（默认 7）")
     r = sub.add_parser("restore", help="从备份恢复（会先给当前库留一份）")
@@ -168,6 +171,58 @@ def _cmd_sources() -> int:
     return 0
 
 
+def _cmd_migrate(args) -> int:
+    """只读：看台账，不动数据。
+
+    写库只允许一个写者（容器或桌面窗口），所以这里刻意不调 init_db——
+    否则你在宿主机敲一下，就可能和容器同时写同一个 SQLite 文件。
+    """
+    from . import migrations
+    from .config import SETTINGS
+    from .db import SCHEMA_VERSION, connect
+
+    conn = connect(SETTINGS.db_path)
+    try:
+        has_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
+        ).fetchone()
+        if not has_table:
+            print(f"{SETTINGS.db_path} 还没有迁移台账。"
+                  f"先跑一次 `signalwatch serve` 或 `signalwatch stats`（会在容器/本机建台账）。")
+            return 2 if args.check else 0
+        rows = [
+            {"version": int(v), "name": n, "applied_at": int(t)}
+            for v, n, t in conn.execute(
+                "SELECT version, name, applied_at FROM schema_migrations ORDER BY version"
+            )
+        ]
+    finally:
+        conn.close()
+
+    done = {r["version"] for r in rows}
+    info = {
+        "current_version": SCHEMA_VERSION,
+        "recorded_max": max(done) if done else 0,
+        "applied": rows,
+        "missing": [{"version": v, "name": n} for v, n in migrations.STEPS
+                    if v not in done and v <= SCHEMA_VERSION],
+    }
+    if args.json:
+        print(json.dumps(info, ensure_ascii=False, indent=2))
+    else:
+        print(f"数据库 {SETTINGS.db_path}")
+        print(f"代码版本 {info['current_version']}，台账最高 {info['recorded_max']}，"
+              f"已记录 {len(rows)} 步")
+        for row in rows:
+            stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(row["applied_at"]))
+            print(f"  v{row['version']:<2} {stamp}  {row['name']}")
+        for row in info["missing"]:
+            print(f"  [缺] v{row['version']} {row['name']}")
+    if args.check and info["missing"]:
+        return 1
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     # Windows 控制台默认 GBK，中文输出会变乱码
     for stream in (sys.stdout, sys.stderr):
@@ -207,6 +262,8 @@ def main(argv: list[str] | None = None) -> int:
 
         print(SETTINGS.db_path)
         return 0
+    if args.cmd == "migrate":
+        return _cmd_migrate(args)
     if args.cmd == "backup":
         return _cmd_backup(args)
     if args.cmd == "restore":

@@ -341,6 +341,10 @@ def init_db(conn: sqlite3.Connection) -> None:
         # 「这个库是第几版」无从判断。
         conn.execute("UPDATE schema_meta SET value = ? WHERE key = 'version'",
                      (str(SCHEMA_VERSION),))
+        # 台账：把「这个库跑过哪几步」记下来（老库首次会一次性补记 1..N）。
+        from . import migrations
+
+        migrations.sync(conn, SCHEMA_VERSION)
 
 
 def db_stats(conn: sqlite3.Connection) -> dict:

@@ -77,7 +77,7 @@
 | 首轮全量抓取 | **约 5 秒**，入库 **100 条**（早期四源）；加两个政府源后又入库 46 条 |
 | 第二轮（同样 5 秒） | 新增 **0** 条 —— 去重生效 |
 | 数据库 | 156 KB → 加源后约 **200 KB**（SQLite，WAL） |
-| 单元测试 | **176 个，31 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / PWA 安装条件 / 桌面 11 页渲染） |
+| 单元测试 | **192 个，36 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / PWA 安装条件 / 桌面 11 页渲染） |
 | PDF 正文 | 巨潮公告 **有文字层**：实测 3 条共抠出 **14353 字**，网页上点「看正文」直接读全文（`pdftext.py`，纯标准库，靠 ToUnicode 还原汉字子集字体） |
 | 跨源去重 | 标题归一后 Jaccard ≥ 0.82、72 小时内、跨源才判重；早的那条留、晚的标 `dup_of` |
 | 备份 | `python run.py backup --keep 3` → `data/backups/backup-20261116-181845.db`（1068 KB）；启动时距上次超 20 小时自动备一次 |
@@ -86,6 +86,7 @@
 | 并发写入 | 50 线程同批插入 10 条 → 库里正好 10 条，无 `database is locked` |
 | 接口压测·宿主机（`python loadtest.py`） | 30 线程 × 20 次 = **600 请求 / 2.13 秒**，**281 QPS**，p50 **103 ms** / p95 **127 ms** / p99 **138 ms**，错误 **0** |
 | 接口压测·容器（同一份代码） | **600 请求 / 10.05 秒**，**59.7 QPS**，p50 **466 ms** / p95 **1104 ms** / p99 **1290 ms**，错误 **0** —— Docker Desktop 的 Windows bind mount 让 SQLite 读慢 4–5 倍，这是实测差距，不是估算 |
+| 接口触达率 | **60/60 = 100%**（`python tools/route_coverage.py`：跑一遍测试，统计 60 条路由里有几条真被请求过） |
 | 进程内指标 | `GET /api/metrics` 实测 `{"requests":603,"by_status":{"200":602},"latency_ms":{"p50":441.5,"p95":1083.5,"p99":1264.0,"samples":602}}`（容器内，压力测试后读取） |
 | 单文件 exe（PyInstaller） | `dist\SignalWatch.exe` **19.7 MB**，`serve --port 8899` 起来后 `/api/health` 返回 200；`desktop` 模式窗口能开（截图 `docs/shot-exe-desktop.png`） |
 | 自动补正文 | 开启后累计 **19 条**巨潮公告有正文（含首屏 628 / 795 字的短公告），每轮最多抠 2 条，不拖慢抓取 |
@@ -100,6 +101,7 @@ python run.py crawl            # 立刻抓一轮
 python run.py stats            # 库里多少条、源健不健康
 python run.py enrich --limit 5 # 把巨潮公告的 PDF 正文抠进库
 python run.py backup --keep 7  # 备份（另有 restore / backups）
+python run.py migrate          # 看迁移台账（只读；--check 有缺步骤则退出 1）
 ```
 
 Windows 上双击 `启动盯梢.bat` 就是桌面版；`install_autostart.ps1` 把它塞进开机启动。
@@ -305,6 +307,22 @@ sqlite3.DatabaseError: database disk image is malformed
 
 `src/signalwatch/db.py` 现在按 `SIGNALWATCH_JOURNAL` 决定 journal 模式（默认 WAL，Docker 里是 delete），`tests/test_core.py::JournalModeTests` 两条用例盯着这个行为。
 
+## 迁移台账（这个库跑过哪几步）
+
+`python run.py migrate` 打印每一步的版本、时间、说明：
+
+```
+数据库 D:\signalwatch\data\signalwatch.db
+代码版本 9，台账最高 9，已记录 9 步
+  v1  2026-11-17 21:03  初始表：sources / items / revisions / runs / schema_meta
+  ...
+  v9  2026-11-17 21:03  分类入库即归类：taxonomy.ensure_seeded + backfill
+```
+
+- 台账表 `schema_migrations(version, name, applied_at)`，由 `db.init_db()` 在迁移跑完后写入（老库第一次会一次性补记 1..N）；
+- **这个命令是只读的**——写库只允许一个写者（容器或桌面窗口），所以它不会为了「修复」台账去动数据；
+- `--check` 在台账缺步骤时退出 1，可以直接放进发布脚本；`--json` 给机器读。
+
 ## 已知限制
 
 - **源是别人给的，随时会变**。36kr 的 `/feed` 就悄悄换成了网页，现在会直接报错而不是静默空跑；
@@ -338,7 +356,7 @@ src/signalwatch/
   desktop.py     tkinter 十二页常驻窗口 + 浮窗提醒
   sources/       cninfo / rss / arxiv / html_list（统计局、政府采购）
   web/           index.html（时间线）、admin.html（管理台）、manifest、sw.js
-tests/           176 个用例（去重、并发、源解析、路由、权限、审计、报表、任务队列、邮件推送、配置隔离、PDF 抠字、备份恢复、跨源去重、Excel、PWA、桌面渲染）
+tests/           192 个用例（去重、并发、源解析、路由、权限、审计、报表、任务队列、邮件推送、配置隔离、PDF 抠字、备份恢复、跨源去重、Excel、PWA、桌面渲染）
 docs/            验收截图
 ```
 
