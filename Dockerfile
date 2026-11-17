@@ -1,4 +1,7 @@
-FROM python:3.11-slim
+ARG BASE_IMAGE=python:3.11-slim
+# 本机 docker.io 的 DNS 是 NXDOMAIN，可以换成镜像源再 build：
+#   docker build --build-arg BASE_IMAGE=m.daocloud.io/docker.io/library/python:3.11-slim .
+FROM ${BASE_IMAGE}
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \

@@ -60,9 +60,9 @@ if (-not (Daemon-Up)) {
 $compose = Join-Path $root "docker-compose.yml"
 if (-not (Test-Path $compose)) { $compose = Join-Path $root "compose.yml" }
 
-& $docker compose -f $compose up -d 2>&1 | ForEach-Object { Say ([string]$_) }
+& $docker compose -f $compose --profile tls up -d 2>&1 | ForEach-Object { Say ([string]$_) }
 if ($LASTEXITCODE -eq 0) {
-    Say "compose up -d 完成：http://127.0.0.1:8766"
+    Say "compose up -d 完成：http://127.0.0.1:8766 ，手机 HTTPS：https://<局域网IP>:8443"
 } else {
     Say "compose up -d 失败（exit $LASTEXITCODE）"
     exit 1

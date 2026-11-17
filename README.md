@@ -149,6 +149,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\start_docker.ps1
 | 检查项 | 实测 |
 | --- | --- |
 | 镜像 | `signalwatch:0.1.0` **215 MB**（基础 `python:3.11-slim`） |
+| 多架构 | `docker buildx build --platform linux/arm64` 成功；容器内 `platform.machine()` = **aarch64**，`signalwatch.__version__` = 0.2.0（QEMU 模拟跑通） |
+| 基础镜像换源 | `Dockerfile` 支持 `--build-arg BASE_IMAGE=...`；本机 `registry-1.docker.io` 是 NXDOMAIN，走 `m.daocloud.io/docker.io/library/python:3.11-slim` |
 | 容器内装依赖 | `pip install .` **14.0 秒**（走清华源；默认 pypi.org 在这台机器会超时） |
 | `docker compose up -d` | 容器 `Up (healthy)`，健康检查 200 |
 | 接口 | `GET /api/health` → `{"ok":true,"version":"0.2.0"}`；`/api/stats` → 1593 条 |
@@ -205,12 +207,20 @@ docker compose up --build      # http://127.0.0.1:8766
 
 PWA 的安装条件浏览器卡得很死：**必须是 https（或 localhost）**。手机连 `http://10.128.8.114:8766` 能看到页面，但装不了。
 
+两条路，**推荐第一条**（容器里加一个只做 TLS 的 nginx，数据库仍然只有 app 容器在写）：
+
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\make_cert.ps1   # 用 docker 里的 openssl 生成 certs\cert.pem + key.pem
-python run.py serve --host 0.0.0.0 --port 8443 --tls        # HTTPS
+powershell -ExecutionPolicy Bypass -File .\make_cert.ps1        # 生成 certs\cert.pem + key.pem（借 docker 里的 openssl）
+docker compose --profile tls up -d                                # app:8766 + proxy:8443
 ```
 
-实测（本机）：`curl -k https://127.0.0.1:8443/api/health` 与 `https://10.128.8.114:8443/api/health` 都返回 `{"ok":true,"version":"0.2.0"}`，`manifest.webmanifest` 200 `application/manifest+json`，`sw.js` 200 `application/javascript`。
+不想用容器时，用内置的 `--tls`（注意：这时宿主机进程会成为第二个写者，**别和容器同时跑**）：
+
+```powershell
+python run.py serve --host 0.0.0.0 --port 8443 --tls
+```
+
+实测（本机，2026-11-17）：经 nginx 前置 `https://127.0.0.1:8443/api/health` 与 `https://10.128.8.114:8443/api/health` 都返回 `{"ok":true,"version":"0.2.0"}`；`manifest.webmanifest` 200 `application/manifest+json`；`sw.js` 200；SSE `GET /api/events/stats` 经前置也能持续推 `data: {"items": 1695, ...}`（`proxy_buffering off`）。
 
 手机上的步骤：
 1. 手机和电脑连同一个 Wi-Fi，浏览器开 `https://<电脑局域网IP>:8443`；

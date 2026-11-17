@@ -27,6 +27,11 @@ Copy-Item (Join-Path $root "src") -Destination $out -Recurse
 Copy-Item (Join-Path $root "run.py") -Destination $out
 Copy-Item (Join-Path $root "launcher\SignalWatch.exe") -Destination $out
 Copy-Item (Join-Path $root "assets\app.ico") -Destination $out
+Copy-Item (Join-Path $root "make_cert.ps1") -Destination $out
+Copy-Item (Join-Path $root "install_autostart.ps1") -Destination $out
+Copy-Item (Join-Path $root "start_docker.ps1") -Destination $out
+Copy-Item (Join-Path $root "docker-compose.yml") -Destination $out
+Copy-Item (Join-Path $root "Dockerfile") -Destination $out
 New-Item -ItemType Directory -Path (Join-Path $out "data") -Force | Out-Null
 
 Write-Host "[4/6] 写配置"
@@ -36,7 +41,10 @@ $readme = @(
   "SignalWatch 0.2.0 - 盯梢机器（绿色版）",
   "",
   "双击 SignalWatch.exe 打开桌面窗口；右下角会弹新条目提醒。",
-  "管理员后台：先双击 启动网页版.bat，再打开 http://127.0.0.1:8766/admin （admin / admin123）",
+  "管理员后台：先双击 启动网页版.bat，再打开 http://127.0.0.1:8766/admin",
+  "  口令在 data\admin-password.txt（第一次是自动生成的，改完可以删掉那个文件）",
+  "",
+  "手机装 PWA：双击 启动手机版(HTTPS).bat，用手机开 https://<电脑局域网IP>:8443 -> 添加到主屏幕",
   "",
   "数据都在 data\ 下：signalwatch.db 是条目库，可直接备份。",
   "卸载：删掉整个文件夹；开机自启在 启动 文件夹里的 signalwatch.lnk。"
@@ -51,6 +59,16 @@ $serveBat = @(
   "start """" http://127.0.0.1:8766/admin"
 ) -join "`r`n"
 Set-Content -Path (Join-Path $out "启动网页版.bat") -Value $serveBat -Encoding utf8
+
+$tlsBat = @(
+  "@echo off",
+  "cd /d ""%~dp0""",
+  "if not exist certs\cert.pem (echo 先在项目里跑 make_cert.ps1 生成证书 & pause & exit /b 1)",
+  "start """" SignalWatch.exe serve --host 0.0.0.0 --tls",
+  "timeout /t 3 >nul",
+  "ipconfig | findstr /i ""IPv4"""
+) -join "`r`n"
+Set-Content -Path (Join-Path $out "启动手机版(HTTPS).bat") -Value $tlsBat -Encoding utf8
 
 $uninstall = @(
   "@echo off",
