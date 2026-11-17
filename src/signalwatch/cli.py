@@ -19,6 +19,9 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("serve", help="起本地网页（默认 127.0.0.1:8766）")
     s.add_argument("--host", default="127.0.0.1", help="绑 0.0.0.0 才能被同网设备访问")
     s.add_argument("--port", type=int, default=8766)
+    s.add_argument("--tls", action="store_true", help="走 HTTPS（手机装 PWA 必须）")
+    s.add_argument("--cert", default="certs/cert.pem", help="证书 PEM")
+    s.add_argument("--key", default="certs/key.pem", help="私钥 PEM")
 
     d = sub.add_parser("desktop", help="桌面窗口（常驻，实时刷新，新条目弹浮窗）")
     d.add_argument("--paused", action="store_true", help="打开后先不抓，手动点「立刻抓一轮」")
@@ -176,7 +179,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "serve":
         from .api import serve
 
-        serve(host=args.host, port=args.port)
+        cert = getattr(args, "cert", None) if getattr(args, "tls", False) else None
+        key = getattr(args, "key", None) if getattr(args, "tls", False) else None
+        if getattr(args, "tls", False):
+            from pathlib import Path as _P
+            for label, path in (("证书", cert), ("私钥", key)):
+                if not _P(path).exists():
+                    print(f"[错误] 找不到{label}：{path}（用 tools/make_cert.ps1 生成，或 --cert/--key 指定）")
+                    return 1
+        serve(host=args.host, port=args.port, certfile=cert, keyfile=key)
         return 0
     if args.cmd == "desktop":
         from .desktop import main as desktop_main

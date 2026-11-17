@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import sys
+import os
 import tempfile
 import threading
 import unittest
@@ -13,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from signalwatch import ingest  # noqa: E402
 from signalwatch.config import Settings  # noqa: E402
+from signalwatch import db  # noqa: E402
 from signalwatch.db import connect, db_stats, init_db  # noqa: E402
 from signalwatch.scheduler import Crawler  # noqa: E402
 from signalwatch.sources.base import RateLimiter, Record, normalize_records  # noqa: E402
@@ -213,3 +215,28 @@ class SettingsIsolationTests(unittest.TestCase):
             self.assertEqual(Settings(home=Path(tmp.name), db_path=target).db_path, target)
         finally:
             tmp.cleanup()
+
+
+class JournalModeTests(unittest.TestCase):
+    """Docker 里 bind mount 到 Windows 目录不能用 WAL，会烂库（database disk image is malformed）。"""
+
+    def test_default_is_wal(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+            conn = db.connect(Path(d) / "a.db")
+            self.assertEqual(conn.execute("PRAGMA journal_mode").fetchone()[0].lower(), "wal")
+            conn.close()
+
+    def test_env_switches_to_delete(self) -> None:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
+            old = os.environ.get("SIGNALWATCH_JOURNAL")
+            os.environ["SIGNALWATCH_JOURNAL"] = "delete"
+            try:
+                conn = db.connect(Path(d) / "b.db")
+                self.assertEqual(conn.execute("PRAGMA journal_mode").fetchone()[0].lower(), "delete")
+                self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+                conn.close()
+            finally:
+                if old is None:
+                    os.environ.pop("SIGNALWATCH_JOURNAL", None)
+                else:
+                    os.environ["SIGNALWATCH_JOURNAL"] = old

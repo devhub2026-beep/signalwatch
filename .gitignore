@@ -22,3 +22,6 @@ tests-out.txt
 launcher/*.exe
 launcher/*.dll
 
+certs/
+data/corrupt/
+data/admin-password.txt

@@ -201,6 +201,42 @@ docker compose up --build      # http://127.0.0.1:8766
 
 数据库挂到 `./data`，容器重启不丢；端口默认只绑本机。
 
+## 手机装 PWA（需要 HTTPS）
+
+PWA 的安装条件浏览器卡得很死：**必须是 https（或 localhost）**。手机连 `http://10.128.8.114:8766` 能看到页面，但装不了。
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\make_cert.ps1   # 用 docker 里的 openssl 生成 certs\cert.pem + key.pem
+python run.py serve --host 0.0.0.0 --port 8443 --tls        # HTTPS
+```
+
+实测（本机）：`curl -k https://127.0.0.1:8443/api/health` 与 `https://10.128.8.114:8443/api/health` 都返回 `{"ok":true,"version":"0.2.0"}`，`manifest.webmanifest` 200 `application/manifest+json`，`sw.js` 200 `application/javascript`。
+
+手机上的步骤：
+1. 手机和电脑连同一个 Wi-Fi，浏览器开 `https://<电脑局域网IP>:8443`；
+2. 证书是自签的，会提示「不安全」→ 选「继续访问」；
+3. Chrome/Safari 菜单里「添加到主屏幕 / 安装应用」——这时才真的能装。
+
+自签证书换机器/换 IP 要重新生成（`make_cert.ps1` 会自动把本机所有非虚拟网卡的 IPv4 写进 SAN）。想彻底没有警告，得用受信任的证书（内网 CA 或域名 + Let's Encrypt）。
+
+
+### 一次真实事故：容器里用 WAL 会把库写烂
+
+用 `docker compose` 把 `./data` 目录 bind mount 进容器，同时宿主机也在写同一个库，就会撞上：
+
+```
+sqlite3.DatabaseError: database disk image is malformed
+```
+
+原因：WAL 模式下 `-wal`/`-shm` 由两套 OS 各自缓存，页顺序对不上。处置：
+
+1. `docker compose down`，把坏库移到 `data/corrupt/`；
+2. 用最近一份 `data/backups/backup-*.db` 覆盖回来（`PRAGMA integrity_check` 确认 `ok`）；
+3. `docker-compose.yml` 里加 `SIGNALWATCH_JOURNAL: delete`（容器是唯一写者，回滚日志够用），重新 build；
+4. 以后**不要在容器跑着的时候从宿主机直接改库**——要用 `docker compose exec signalwatch signalwatch ...`。
+
+`src/signalwatch/db.py` 现在按 `SIGNALWATCH_JOURNAL` 决定 journal 模式（默认 WAL，Docker 里是 delete），`tests/test_core.py::JournalModeTests` 两条用例盯着这个行为。
+
 ## 已知限制
 
 - **源是别人给的，随时会变**。36kr 的 `/feed` 就悄悄换成了网页，现在会直接报错而不是静默空跑；

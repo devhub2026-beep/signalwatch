@@ -9,6 +9,9 @@ services:
     environment:
       SIGNALWATCH_HOME: /data
       SIGNALWATCH_DB: /data/signalwatch.db
+      # bind mount 到 Windows 目录时 WAL 会烂库（database disk image is malformed），
+      # 退回回滚日志；容器是唯一写者，够用。
+      SIGNALWATCH_JOURNAL: delete
     volumes:
       - ./data:/data
     restart: unless-stopped

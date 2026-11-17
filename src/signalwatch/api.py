@@ -690,10 +690,21 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
     return app
 
 
-def serve(host: str = "127.0.0.1", port: int = 8766, settings: Settings | None = None) -> None:
+def serve(
+    host: str = "127.0.0.1",
+    port: int = 8766,
+    settings: Settings | None = None,
+    certfile: str | None = None,
+    keyfile: str | None = None,
+) -> None:
+    """起服务。给了 certfile/keyfile 就走 HTTPS——手机装 PWA 必须要 https。"""
     import uvicorn
 
-    uvicorn.run(create_app(settings), host=host, port=port, log_level="info")
+    kw: dict = {"host": host, "port": port, "log_level": "info"}
+    if certfile and keyfile:
+        kw["ssl_certfile"] = certfile
+        kw["ssl_keyfile"] = keyfile
+    uvicorn.run(create_app(settings), **kw)
 
 
 

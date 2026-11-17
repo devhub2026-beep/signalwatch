@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 import sqlite3
 import threading
 from pathlib import Path
@@ -226,13 +227,24 @@ BUILTIN_ROLES = [
 
 
 def connect(db_path: Path | str) -> sqlite3.Connection:
-    """开连接。WAL + busy_timeout 是并发下不报 database is locked 的前提。"""
+    """开连接。默认 WAL + busy_timeout（并发下不报 database is locked）。
+
+    但 WAL 在「容器 bind mount 到 Windows 目录」这种场景会烂库：
+    -wal/-shm 由两个 OS 各自缓存，写进去的页顺序对不上，最后
+    报 `database disk image is malformed`。所以 Docker 里要设
+    SIGNALWATCH_JOURNAL=delete 退回回滚日志（单写者，够用且安全）。
+    """
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path), timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
+    journal = (os.environ.get("SIGNALWATCH_JOURNAL") or "wal").strip().lower()
+    if journal in ("delete", "truncate", "persist", "memory", "off"):
+        conn.execute(f"PRAGMA journal_mode={journal.upper()}")
+        conn.execute("PRAGMA synchronous=FULL")
+    else:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
