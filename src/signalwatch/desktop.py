@@ -1525,6 +1525,8 @@ class App:
         for key, label, default in (("notify_toast", "新条目录屏提示", "1"),
                                     ("notify_sound", "提示音", "1"),
                                     ("notify_rules_only", "只提醒命中订阅词的条目", "0"),
+                                    ("notify.alert", "源连续失败时发邮件告警", "1"),
+                                    ("enrich.auto", "新条目自动抠正文（PDF 文字层）", "1"),
                                     ("notify_pause", "免打扰（夜间 23:00–07:00 静音）", "0")):
             var = tk.IntVar(value=1 if admin.get_setting(self.conn, key, default) == "1" else 0)
             self.notify_vars[key] = var

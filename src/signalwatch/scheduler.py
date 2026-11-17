@@ -78,6 +78,8 @@ class Crawler:
                 self.conn, name, started_at=started, ok=False, fetched=0,
                 inserted=0, updated=0, error=outcome.error,
             )
+            if count >= self.settings.fail_threshold:
+                self._alert_failure(name, count, outcome.error or "unknown")
             return TickResult(name, False, 0, 0, 0, f"{outcome.error}（连续失败 {count} 次）")
 
         records = normalize_records(outcome.records)
@@ -112,7 +114,53 @@ class Crawler:
                 continue
             if r is not None:
                 results.append(r)
+        self._auto_enrich(results)
         return results
+
+    # ---- 失败告警 -------------------------------------------------------------
+    def _alert_failure(self, name: str, count: int, error: str) -> None:
+        """连续失败到达阈值才发一封，且同一源 6 小时内只发一封，避免刷屏。"""
+        try:
+            from . import admin, notify
+
+            if count < self.settings.fail_threshold:  # 调用方已经判过一次，这里再兜一层
+                return
+            if admin.get_setting(self.conn, "notify.alert", "1") != "1":
+                return
+            if not notify.is_ready(self.conn):
+                return
+            last = admin.get_setting(self.conn, f"alert.last.{name}", "")
+            now = ingest.now_ms()
+            if last.isdigit() and now - int(last) < 6 * 3600 * 1000:
+                return
+            subject = f"SignalWatch 告警：{name} 连续失败 {count} 次"
+            body = (
+                f"源 {name} 已经连续失败 {count} 次，页面上的状态会变成「降级」。\n\n"
+                f"最后一次错误：\n{error}\n\n"
+                f"可以先去「数据源」页看它的间隔设置，或者手动抓一轮确认站点是否改了结构。"
+            )
+            notify.send(self.conn, subject, body)
+            admin.set_setting(self.conn, f"alert.last.{name}", str(now))
+        except Exception:
+            pass  # 告警失败不能影响抓取
+
+    # ---- 正文自动补抓 ---------------------------------------------------------
+    def _auto_enrich(self, results: list[TickResult]) -> None:
+        """有新闻条目进来就顺手抠几条正文（PDF 文字层），每轮最多 2 条。
+
+        放在这里而不是定时任务里，是因为「新条目不在时抠旧条目」没有意义：
+        抠正文的目的就是让用户点开首屏那条时能看到内容。
+        """
+        if not any(r.ok and r.inserted for r in results):
+            return
+        try:
+            from . import admin, enrich
+
+            if admin.get_setting(self.conn, "enrich.auto", "1") != "1":
+                return
+            enrich.enrich(self.conn, limit=2, only=("cninfo",))
+        except Exception:
+            pass
 
     # ---- 后台循环 -------------------------------------------------------------
     def start(self) -> None:

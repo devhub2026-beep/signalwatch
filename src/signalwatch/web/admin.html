@@ -566,7 +566,7 @@ async function loadReport() {
 $("rload").onclick = () => loadReport();
 $("rdays").onchange = () => loadReport();
 
-const SET_ROWS = [["notify_toast", "新条目录屏提示"], ["notify_sound", "提示音"], ["notify_rules_only", "只提醒命中订阅词的条目"]];
+const SET_ROWS = [["notify_toast", "新条目录屏提示"], ["notify_sound", "提示音"], ["notify_rules_only", "只提醒命中订阅词的条目"], ["notify.alert", "源连续失败时发邮件告警"], ["enrich.auto", "新条目自动抠正文（PDF 文字层）"]];
 
 async function loadSettings() {
   const r = await api("/api/admin/settings");

@@ -75,14 +75,14 @@
 | 首轮全量抓取 | **约 5 秒**，入库 **100 条**（早期四源）；加两个政府源后又入库 46 条 |
 | 第二轮（同样 5 秒） | 新增 **0** 条 —— 去重生效 |
 | 数据库 | 156 KB → 加源后约 **200 KB**（SQLite，WAL） |
-| 单元测试 | **130 个，26.8 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / 桌面 11 页渲染） |
+| 单元测试 | **138 个，18.5 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / 桌面 11 页渲染） |
 | PDF 正文 | 巨潮公告 **有文字层**：实测 3 条共抠出 **14353 字**，网页上点「看正文」直接读全文（`pdftext.py`，纯标准库，靠 ToUnicode 还原汉字子集字体） |
 | 跨源去重 | 标题归一后 Jaccard ≥ 0.82、72 小时内、跨源才判重；早的那条留、晚的标 `dup_of` |
 | 备份 | `python run.py backup --keep 3` → `data/backups/backup-20261116-181845.db`（1068 KB）；启动时距上次超 20 小时自动备一次 |
 | 抓取成功率（近 24 小时，83 次运行） | **98.8%**，去重率 **93.5%**，平均每次 **0.86 秒** |
 | 任务队列 | 优先级领取、失败可重试、可取消；实测两条任务 `done`（cninfo 30 条 / 全量 100 条） |
 | 并发写入 | 50 线程同批插入 10 条 → 库里正好 10 条，无 `database is locked` |
-| 接口压测（`python loadtest.py`） | 30 线程 × 20 次 = **600 请求 / 2.23 秒**，**269 QPS**，p50 **96 ms** / p95 **162 ms** / p99 **380 ms**，错误 **0** |
+| 接口压测（`python loadtest.py`） | 30 线程 × 20 次 = **600 请求 / 1.46 秒**，**410 QPS**，p50 **71 ms** / p95 **89 ms** / p99 **104 ms**，错误 **0** |
 
 ## 跑起来
 
@@ -106,6 +106,32 @@ Windows 上双击 `启动盯梢.bat` 就是桌面版；`install_autostart.ps1` �
 之后每当有新条目，程序把最近 30 条拼成一封摘要（标题「SignalWatch：N 条新信息」，每条带来源、时间、公司、原文链接），**十分钟最多一封**，失败只记审计不弹窗。
 
 凭据只存在本机数据库的 `settings` 表里（`data/` 已在 `.gitignore`），不进代码、不进包、不打日志。换人用就换授权码；不想推送就把「开关」关掉。
+
+## 自己干活的三件事（不用你盯着）
+
+**1. 新条目自动抠正文。** 巨潮的公告是 PDF，很多浏览器里点开是空白或要下载。程序在每次抓到新条目后，顺手抠 2 条 PDF 的文字层（`data` 里那几条），时间线卡片上就多一个「看正文（N 字）」按钮，点开直接读。开关在设置页「新条目自动抠正文」，关掉就不抓。实测一份员工持股计划公告抠出 6 千字通顺中文，比原 PDF 好读。
+
+**2. 源连续失败会发邮件。** 连续失败到达阈值（默认 3 次）就发一封告警，同一源 6 小时内只发一封，邮件里有最后一次错误和处置建议。没有配 SMTP 就只在页面显示红条，不会假装发了。开关在设置页「源连续失败时发邮件告警」。
+
+**3. 关掉窗口也能抓。** 用 `install_task.ps1` 把抓取注册成 Windows 计划任务：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install_task.ps1        # 每 10 分钟
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install_task.ps1 -Minutes 30
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install_task.ps1 -Remove
+```
+
+它注册的任务是 `SignalWatch.exe crawl`（没有 exe 就退回 `run.py crawl`），抓完就退出，日志追加到 `data\crawl.log`，只在当前用户登录时运行、不需要管理员权限。注意：如果当前会话被限制（比如以受限令牌跑），`schtasks` 会报 `Access is denied`，那就自己开一个普通 PowerShell 窗口跑上面那条命令。
+
+## 版本管理与 CI
+
+仓库是 git（`.git` 已初始化，第一次提交 161 个文件）。`.github/workflows/tests.yml` 跑三件事：
+
+- **测试**：ubuntu + windows × Python 3.11/3.12，四个组合都跑 `unittest discover`，再跑一次 `run.py stats` 冒烟；
+- **构建**：`python -m build` 出 wheel，再 `pip install --no-deps dist/*.whl` 验证装得上、`signalwatch/web` 里的静态文件进了包；
+- **容器**：`docker build` + 容器里跑一次 CLI + `docker compose config` 校验。
+
+这台机器没装 docker（WSL 都没装），所以镜像从来没在本地跑过——CI 里那一步是给「有 docker 的环境」验证的。
 
 ## 接口
 
@@ -151,9 +177,11 @@ docker compose up --build      # http://127.0.0.1:8766
 ## 已知限制
 
 - **源是别人给的，随时会变**。36kr 的 `/feed` 就悄悄换成了网页，现在会直接报错而不是静默空跑；
-- 只存标题、摘要、链接；**PDF 正文抓到的会存进库**（`items.body_text`，单条最多 6000 字），不落原始 PDF 文件；
+- 只存标题、摘要、链接；**PDF 正文抓到的会存进库**（`items.body_text`，单条最多 6000 字），不落原始 PDF 文件；自动补抓只覆盖首屏那几条，历史条目要自己跑 `run.py enrich`；
 - 桌面端也要登录（可以「以访客身份进入」只读看板），改动都会记审计；
-- 调度是进程内的，服务停了就不抓了；7×24 要 Docker + `restart: unless-stopped`；
+- 调度是进程内的，服务/窗口停了就不抓了——要么用 `install_task.ps1` 注册计划任务、要么 Docker + `restart: unless-stopped`；
+- **docker 没在本机验过**（这台机器没 WSL/docker，装 WSL 要管理员 + 重启），`Dockerfile` 与 `compose.yml` 只在 CI 里构建；
+- **手机 PWA 没在真机装过**：`manifest` 与 `sw.js` 都在，但 PWA 安装要求 https 或 localhost，手机走局域网地址（http）装不上；
 - 令牌用自签 HMAC，没有刷新机制，7 天过期就得重登。
 
 ## 目录
@@ -179,7 +207,7 @@ src/signalwatch/
   desktop.py     tkinter 十二页常驻窗口 + 浮窗提醒
   sources/       cninfo / rss / arxiv / html_list（统计局、政府采购）
   web/           index.html（时间线）、admin.html（管理台）、manifest、sw.js
-tests/           130 个用例（去重、并发、源解析、路由、权限、审计、报表、任务队列、邮件推送、配置隔离、PDF 抠字、备份恢复、跨源去重、Excel、桌面渲染）
+tests/           138 个用例（去重、并发、源解析、路由、权限、审计、报表、任务队列、邮件推送、配置隔离、PDF 抠字、备份恢复、跨源去重、Excel、桌面渲染）
 docs/            验收截图
 ```
 

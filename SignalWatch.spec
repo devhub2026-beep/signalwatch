@@ -3,10 +3,10 @@
 
 a = Analysis(
     ['tools/pyi_entry.py'],
-    pathex=['src'],
+    pathex=[],
     binaries=[],
     datas=[('src/signalwatch/web', 'signalwatch/web')],
-    hiddenimports=['uvicorn.logging', 'uvicorn.loops.auto', 'uvicorn.protocols.http.auto'],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

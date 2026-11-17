@@ -672,9 +672,11 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
     @app.get("/api/admin/settings")
     def admin_settings(request: Request) -> dict:
         _need(request)
-        keys = ("notify_toast", "notify_sound", "notify_rules_only")
-        return {"values": {k: admin.get_setting(crawler.conn, k, "1" if k != "notify_rules_only" else "0")
-                           for k in keys}}
+        keys = {
+            "notify_toast": "1", "notify_sound": "1", "notify_rules_only": "0",
+            "notify.alert": "1", "enrich.auto": "1",
+        }
+        return {"values": {k: admin.get_setting(crawler.conn, k, d) for k, d in keys.items()}}
 
     @app.patch("/api/admin/settings")
     def admin_settings_patch(body: SettingsIn, request: Request) -> dict:
