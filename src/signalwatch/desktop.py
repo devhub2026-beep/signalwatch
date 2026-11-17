@@ -70,18 +70,7 @@ def human_day(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000.0).strftime("%Y-%m-%d %H:%M")
 
 
-def human_ago(seconds: int) -> str:
-    seconds = int(max(0, seconds))
-    if seconds < 60:
-        return f"{seconds} 秒前"
-    if seconds < 3600:
-        return f"{seconds // 60} 分钟前"
-    if seconds < 86400:
-        return f"{seconds // 3600} 小时前"
-    return f"{seconds // 86400} 天前"
-
-
-@dataclass
+@dataclass(frozen=True)
 class DeskRow:
     id: int
     source: str
@@ -105,12 +94,6 @@ def rows_from_db(conn, *, q="", category="", only_unread=False, only_starred=Fal
     ]
 
 
-def new_ids(prev: Iterable[int], rows: Iterable[DeskRow]) -> list[int]:
-    seen = set(prev)
-    return [r.id for r in rows if r.id not in seen]
-
-
-# ---- 手画控件 ------------------------------------------------------------
 def rounded(canvas: tk.Canvas, x1, y1, x2, y2, r, fill, outline="", width=1):
     r = max(0, min(r, (x2 - x1) / 2, (y2 - y1) / 2))
     pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2,

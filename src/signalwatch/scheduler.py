@@ -266,13 +266,3 @@ def _db_stats(conn):
     return db_stats(conn)
 
 
-def run_once(settings: Settings | None = None) -> list[TickResult]:
-    crawler = Crawler(settings)
-    try:
-        return crawler.tick()
-    finally:
-        crawler.conn.close()
-
-
-def _time_now() -> int:
-    return int(time.time() * 1000)

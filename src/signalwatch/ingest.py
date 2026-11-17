@@ -123,10 +123,6 @@ def sync_sources(conn: sqlite3.Connection, sources) -> None:
             conn.execute("UPDATE sources SET enabled = 0")
 
 
-def enabled_sources(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return list(conn.execute("SELECT * FROM sources WHERE enabled = 1 ORDER BY name"))
-
-
 def record_run(
     conn: sqlite3.Connection,
     source: str,

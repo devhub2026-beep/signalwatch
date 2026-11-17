@@ -432,11 +432,6 @@ def cancel_job(conn: sqlite3.Connection, job_id: int) -> None:
             (_now(), job_id))
 
 
-def bump_job(conn: sqlite3.Connection, job_id: int) -> None:
-    with guard(conn), conn:
-        conn.execute("UPDATE jobs SET priority = priority + 10 WHERE id = ? AND status = 'queued'", (job_id,))
-
-
 def job_detail(conn: sqlite3.Connection, job_id: int) -> dict | None:
     with guard(conn):
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()

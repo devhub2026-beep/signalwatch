@@ -50,11 +50,6 @@ def can(conn, user: dict, perm: str) -> bool:
     return perm in perms_of(conn, user["role"])
 
 
-def need_perm(conn, user: dict, perm: str) -> None:
-    if not can(conn, user, perm):
-        raise AuthError(f"这个操作要「{perm}」权限", status=403)
-
-
 class AuthError(Exception):
     """认证/授权失败。status 是给 HTTP 层用的。"""
 
