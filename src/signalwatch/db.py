@@ -15,7 +15,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 # 一条 sqlite 连接不能被多个线程同时用（游标会互相踩，报 "not an error" / "another row available"）。
 # 这里给每条连接配一把锁，所有读写都先拿锁 —— 并发安全靠这一处，而不是靠调用方自觉。
@@ -314,6 +314,13 @@ def _migrate(conn) -> None:
         """
     )
 
+    # v9：分类改成「入库即归类」。老库里一直没人调 auto_categorize，
+    # 结果 604 条有来源却没有分类，按分类筛的时候集体消失。
+    from . import taxonomy
+
+    taxonomy.ensure_seeded(conn)
+    taxonomy.backfill(conn)
+
 
 def init_db(conn: sqlite3.Connection) -> None:
     with guard(conn), conn:
@@ -330,6 +337,10 @@ def init_db(conn: sqlite3.Connection) -> None:
             conn.execute("INSERT INTO schema_meta(key, value) VALUES('version', ?)", (str(SCHEMA_VERSION),))
         elif int(row["value"]) > SCHEMA_VERSION:
             raise RuntimeError(f"数据库版本 {row['value']} 比代码支持的 {SCHEMA_VERSION} 新，先升级代码")
+        # 迁移跑完了就把版本号更新到当前，否则 schema_meta 永远停在建库那天，
+        # 「这个库是第几版」无从判断。
+        conn.execute("UPDATE schema_meta SET value = ? WHERE key = 'version'",
+                     (str(SCHEMA_VERSION),))
 
 
 def db_stats(conn: sqlite3.Connection) -> dict:

@@ -11,6 +11,7 @@ import sqlite3
 import time
 from typing import Iterable, Sequence
 
+from . import taxonomy
 from .db import guard
 
 # 任务状态：排队 → 运行 → 成功 / 失败 →（重试）→ 排队
@@ -20,7 +21,7 @@ STATE_TEXT = {"queued": "排队中", "running": "运行中", "done": "已完成"
 ITEM_STATES = ("online", "offline")
 ITEM_STATE_TEXT = {"online": "在架", "offline": "下架"}
 
-DEFAULT_CATEGORIES = ("金融", "科技", "学术", "政策", "招聘")
+DEFAULT_CATEGORIES = taxonomy.DEFAULT_CATEGORIES
 
 
 def _now() -> int:
@@ -30,12 +31,7 @@ def _now() -> int:
 # ---------------- 分类 ----------------
 def seed_categories(conn: sqlite3.Connection) -> None:
     with guard(conn), conn:
-        for i, name in enumerate(DEFAULT_CATEGORIES):
-            conn.execute(
-                "INSERT INTO categories(name, sort, enabled, created_at) VALUES (?, ?, 1, ?)"
-                " ON CONFLICT(name) DO NOTHING",
-                (name, i * 10, _now()),
-            )
+        taxonomy.ensure_seeded(conn)
 
 
 def list_categories(conn: sqlite3.Connection, *, only_enabled: bool = False) -> list[dict]:
@@ -475,15 +471,7 @@ def job_failure_reason(error: str) -> str:
     return "unknown"
 
 # 源 → 分类的默认归属（新条目进库就落好，不用人工点）
-SOURCE_CATEGORY = {
-    "cninfo": "金融",
-    "arxiv": "学术",
-    "arxiv-fin": "金融",
-    "ithome": "科技",
-    "sspai": "科技",
-    "stats": "政策",
-    "ccgp": "政策",
-}
+SOURCE_CATEGORY = taxonomy.SOURCE_CATEGORY
 
 
 def auto_categorize(conn: sqlite3.Connection) -> int:

@@ -12,6 +12,7 @@ import hashlib
 import sqlite3
 import time
 
+from . import taxonomy
 from .db import guard
 from .sources.base import Record
 
@@ -62,6 +63,7 @@ def save_records(
                     """,
                     (fp, 1, rec.title, rec.summary, ch, seen_at),
                 )
+                taxonomy.assign(conn, int(cur.lastrowid), source)
                 continue
             row = conn.execute(
                 "SELECT id, content_hash, version FROM items WHERE fingerprint = ?", (fp,)
