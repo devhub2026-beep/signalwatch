@@ -1,0 +1,19 @@
+services:
+  signalwatch:
+    build: .
+    image: signalwatch:0.1.0
+    container_name: signalwatch
+    ports:
+      # 只绑本机；同事要访问就把左边改成 0.0.0.0:8766
+      - "127.0.0.1:8766:8766"
+    environment:
+      SIGNALWATCH_HOME: /data
+      SIGNALWATCH_DB: /data/signalwatch.db
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8766/api/health',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

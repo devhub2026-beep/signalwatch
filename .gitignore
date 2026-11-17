@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# 本地数据：数据库、日志
+data/
+*.db
+*.db-wal
+*.db-shm
+
+.idea/
+.vscode/
+.DS_Store
+
+desktop.*.log
+tests-out.txt
+*.spec.bak
+launcher/*.exe
+launcher/*.dll
+

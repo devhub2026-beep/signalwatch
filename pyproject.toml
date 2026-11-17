@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "signalwatch"
+version = "0.2.0"
+description = "盯梢机器：把公开信息源盯住，只报新增和变更"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.23",
+]
+
+[project.scripts]
+signalwatch = "signalwatch.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+signalwatch = ["web/*.html", "web/*.webmanifest", "web/*.js"]
+

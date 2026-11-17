@@ -1,0 +1,532 @@
+<application>
+  <component name="RecentProjectsManager">
+    <option name="additionalInfo">
+      <map>
+        <entry key="$USER_HOME$/PycharmProjects/PythonProject">
+          <value>
+            <RecentProjectMetaInfo frameTitle="PythonProject" projectWorkspaceId="3HzQ3nRBp4rmp54joJMI6BbslUE">
+              <option name="activationTimestamp" value="1786868275080" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="4" />
+              </option>
+              <frame x="167" y="100" width="1750" height="970" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1786868221046" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/PycharmProjects/PythonProject2">
+          <value>
+            <RecentProjectMetaInfo frameTitle="PythonProject2" projectWorkspaceId="3HzUz50oiCei2ZFnVkRervjAm8r">
+              <option name="activationTimestamp" value="1786870649458" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="7" />
+              </option>
+              <frame x="-9" y="-9" width="1938" height="1038" extendedState="6" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1786870649699" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/PycharmProjects/PythonProject3">
+          <value>
+            <RecentProjectMetaInfo frameTitle="PythonProject3 – C:\Users\Administrator\PycharmProjects\PythonProject3\.venv\包.py" projectWorkspaceId="3HzVMqhHF5Dybhma4oHhzV2GHY0">
+              <option name="activationTimestamp" value="1787058743486" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="8" />
+              </option>
+              <frame x="-9" y="-9" width="1938" height="1038" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1786870838707" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/PycharmProjects/PythonProject4">
+          <value>
+            <RecentProjectMetaInfo frameTitle="PythonProject4" projectWorkspaceId="3I5K6v91AFHLddbdEd0Ig0jMxn3">
+              <option name="activationTimestamp" value="1787049015371" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="0" />
+              </option>
+              <frame x="85" y="25" width="1750" height="970" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1787048817916" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="D:/密密麻麻、">
+          <value>
+            <RecentProjectMetaInfo frameTitle="密密麻麻、" projectWorkspaceId="3I5gKTr1wHZf8gADRpfMFc3IYo8">
+              <option name="activationTimestamp" value="1787059804962" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="2" />
+              </option>
+              <frame x="85" y="25" width="1750" height="970" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1787059779869" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="D:/python/.venv">
+          <value>
+            <RecentProjectMetaInfo frameTitle=".venv" projectWorkspaceId="3I5j30VTHVCztbzyPYL7KVwKU3M">
+              <option name="activationTimestamp" value="1787061257716" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="4" />
+              </option>
+              <frame x="85" y="25" width="1750" height="970" extendedState="6" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1787061120689" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="D:/python">
+          <value>
+            <RecentProjectMetaInfo displayName="python, PythonProject" frameTitle="python" projectWorkspaceId="3I5gfZ9PkiKtOOvBXhO3OP63PoB">
+              <option name="activationTimestamp" value="1787061681905" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="3" />
+              </option>
+              <frame x="30" y="50" width="1750" height="970" extendedState="6" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/虚拟环境">
+          <value>
+            <RecentProjectMetaInfo frameTitle="虚拟环境" projectWorkspaceId="3I5jMvnGDoVl70FIRLMHDZiXmXJ">
+              <option name="activationTimestamp" value="1787061359521" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="5" />
+              </option>
+              <frame x="85" y="25" width="1750" height="970" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1787061279026" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/.venv/.idea">
+          <value>
+            <RecentProjectMetaInfo frameTitle=".idea" projectWorkspaceId="3I5kCeewRfHiv4A891djmddmreP">
+              <option name="activationTimestamp" value="1787064561884" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="8" />
+              </option>
+              <frame x="-9" y="-9" width="1938" height="1038" extendedState="6" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1787061692432" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/.venv/PythonProject">
+          <value>
+            <RecentProjectMetaInfo frameTitle="PythonProject – 教务系统.py" projectWorkspaceId="3I5nR7LoeYK0jcOWnrh9VxB3WCQ">
+              <option name="activationTimestamp" value="1787409219565" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="0" />
+              </option>
+              <frame x="555" y="32" width="930" height="973" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1787063285706" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/.venv/PythonProject1">
+          <value>
+            <RecentProjectMetaInfo frameTitle="PythonProject1" projectWorkspaceId="3IH65gTrED6THg8gdFdm4NWTQdG">
+              <option name="activationTimestamp" value="1787408964636" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="1" />
+              </option>
+              <frame x="85" y="25" width="1750" height="970" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1787408964929" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/.venv/PythonProject2">
+          <value>
+            <RecentProjectMetaInfo frameTitle="PythonProject2 – main.py" projectWorkspaceId="3IH66wvazHcUrToKTc4bwMilzI6">
+              <option name="activationTimestamp" value="1787408988079" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="2" />
+              </option>
+              <frame x="85" y="25" width="1750" height="970" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1787408974512" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/.venv/PythonProject3">
+          <value>
+            <RecentProjectMetaInfo frameTitle="PythonProject3 – E:\.venv\PythonProject3\.venv\pyvenv.cfg" projectWorkspaceId="3IH6UZP1T1aBjEqnjQKYk8G5mxM">
+              <option name="activationTimestamp" value="1787584370605" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="3" />
+              </option>
+              <frame x="951" y="10" width="920" height="970" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1787409162347" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/PythonProject">
+          <value>
+            <RecentProjectMetaInfo frameTitle="PythonProject" projectWorkspaceId="3I5jwXlMZPtU56iIEtQJCtjfh44">
+              <option name="activationTimestamp" value="1787584442190" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="7" />
+              </option>
+              <frame x="85" y="25" width="1750" height="970" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1787584444163" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="F:/">
+          <value>
+            <RecentProjectMetaInfo frameTitle="CC-Switch-v3.14.1-Windows.msi – part1.py" projectWorkspaceId="3HzQBzhNISxjtPIlqSIzioy6CfG">
+              <option name="activationTimestamp" value="1790259085637" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="5" />
+              </option>
+              <option name="customProjectName" value="CC-Switch-v3.14.1-Windows.msi" />
+              <frame x="996" y="21" width="908" height="970" extendedState="6" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1789993729043" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/Pictures/Camera Roll">
+          <value>
+            <RecentProjectMetaInfo frameTitle="Camera Roll – C:\Users\Administrator\Pictures\Camera Roll\.venv\part4.py" projectWorkspaceId="3IMpcrq7gWm9g6gNGmeo51hIiJL">
+              <option name="activationTimestamp" value="1791383395285" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="4" />
+              </option>
+              <frame x="951" y="0" width="978" height="1029" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1790257462635" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/.venv/PythonProject5">
+          <value>
+            <RecentProjectMetaInfo frameTitle="PythonProject5 – main.py" projectWorkspaceId="3JmGgnxqDNCpvHawtMxAAGqUwFG">
+              <option name="activationTimestamp" value="1790258943526" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="5" />
+              </option>
+              <frame x="85" y="25" width="1750" height="970" extendedState="1" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1790258943783" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="C:/Users/ADMINI~1">
+          <value>
+            <RecentProjectMetaInfo displayName="Administrator, FastAPIProject1" frameTitle="a68bd095-2c4a-4d4e-8a71-f32d3ea24698.tmp [C:/Users/ADMINI~1]" projectWorkspaceId="2oFbMWXYhc7bngVMAJ3zscmygSL">
+              <option name="activationTimestamp" value="1792833050397" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.9437.214" />
+              <option name="buildTimestamp" value="1786463280000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="3" />
+              </option>
+              <option name="customProjectName" value="a68bd095-2c4a-4d4e-8a71-f32d3ea24698.tmp" />
+              <frame x="-10" y="-10" width="1933" height="1033" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1791427397464" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/.venv/FastAPIProject">
+          <value>
+            <RecentProjectMetaInfo displayName="FastAPIProject, python..." frameTitle="FastAPIProject – main.py [FastAPIProject]" projectWorkspaceId="3L3RTaG6WW4Bfy9yBFND1YpA3FJ">
+              <option name="activationTimestamp" value="1792680779056" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="0" />
+              </option>
+              <frame x="-10" y="-10" width="1933" height="1033" extendedState="6" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1792680774057" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/.venv/FastAPIProject2">
+          <value>
+            <RecentProjectMetaInfo frameTitle="FastAPIProject2" projectWorkspaceId="3L8Q7NgwfZSNnQFyqt8bRiJZ8kx">
+              <option name="activationTimestamp" value="1792833074302" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="1" />
+              </option>
+              <frame x="85" y="25" width="1750" height="970" extendedState="6" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1792833047211" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/Desktop/python">
+          <value>
+            <RecentProjectMetaInfo frameTitle="python – main.py" projectWorkspaceId="3KS4qzSRMM4jolAW9kwXn5bLq5x">
+              <option name="activationTimestamp" value="1792833076684" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="8" />
+              </option>
+              <frame x="-9" y="-9" width="1938" height="1038" extendedState="6" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1792833078266" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/.venv/FastAPIProject3">
+          <value>
+            <RecentProjectMetaInfo frameTitle="FastAPIProject3" projectWorkspaceId="3L8QFOPC4rV231bBUFbOEAmWkL7">
+              <option name="activationTimestamp" value="1792833115054" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="2" />
+              </option>
+              <frame x="85" y="25" width="1750" height="970" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1792833110313" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/.venv/FastAPIProject5">
+          <value>
+            <RecentProjectMetaInfo frameTitle="FastAPIProject5 – main.py" projectWorkspaceId="3L8RCi7ST49DFXHr6KFBGcNk4es">
+              <option name="activationTimestamp" value="1792833593637" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="3" />
+              </option>
+              <frame x="85" y="25" width="1750" height="970" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1792833582740" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/.venv/FastAPIProject7">
+          <value>
+            <RecentProjectMetaInfo displayName="FastAPIProject7, PythonProject6" frameTitle="rag_app.py – test.py [FastAPIProject7]" projectWorkspaceId="3L8RTbgP3h7oQ6TgpK0onw7JjMX">
+              <option name="activationTimestamp" value="1793111479166" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="4" />
+              </option>
+              <option name="customProjectName" value="rag_app.py" />
+              <frame x="161" y="105" width="1750" height="985" extendedState="6" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1792939973544" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/.venv/PythonProject6">
+          <value>
+            <RecentProjectMetaInfo displayName="PythonProject6, FastAPIProject4..." frameTitle="PythonProject6 – RAG.py [PythonProject6]" projectWorkspaceId="3KPrFIGsK5n3jrjQgQ3GgPOCU1h">
+              <option name="activationTimestamp" value="1793016227192" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="6" />
+              </option>
+              <frame x="156" y="40" width="1750" height="970" extendedState="1" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1793016228135" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/Documents/deepseek-harness/default-workspace/agent-oracle">
+          <value>
+            <RecentProjectMetaInfo frameTitle="agent-oracle [C:/Users/Administrator/Documents/deepseek-harness/default-workspace/agent-oracle] – daily-ingest.cmd" projectWorkspaceId="3LJnZiHkEXY7pygFM3Y2GyuLMyH">
+              <option name="activationTimestamp" value="1793193431203" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="5" />
+              </option>
+              <frame x="770" y="8" width="1023" height="970" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1793181104437" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/Documents/deepseek-harness/default-workspace/rag-service">
+          <value>
+            <RecentProjectMetaInfo frameTitle="rag-service – C:\Users\Administrator\AppData\Local\JetBrains\PyCharm2026.2\python_stubs\-1745907658\marshal.py" projectWorkspaceId="3LKLQncnitfK35rMZTHQCz08nO2">
+              <option name="activationTimestamp" value="1793705774851" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="6" />
+              </option>
+              <frame x="602" y="27" width="979" height="1030" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1793368137813" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/PycharmProjects/autonomous-agent">
+          <value>
+            <RecentProjectMetaInfo frameTitle="autonomous-agent – run_cli.py [autonomous-agent]" projectWorkspaceId="3LxL2Pv45oexYTGIgMilQO4oYKw">
+              <option name="activationTimestamp" value="1794400327754" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="8" />
+              </option>
+              <frame x="85" y="25" width="1750" height="970" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1794390574621" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/PycharmProjects/verity">
+          <value>
+            <RecentProjectMetaInfo frameTitle="verity – report.html" projectWorkspaceId="3LxfANW7VX85XxCsOWCS8HlxiZf">
+              <option name="activationTimestamp" value="1794496134456" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="0" />
+              </option>
+              <frame x="-454" y="55" width="1750" height="970" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1794400498446" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="E:/.venv/WelcomeScreen">
+          <value>
+            <RecentProjectMetaInfo frameTitle="WelcomeScreen – 欢迎使用 PyCharm" projectWorkspaceId="3M5zYwpct94BUYQcERYWE1wW1x8">
+              <option name="activationTimestamp" value="1794655296153" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="1" />
+              </option>
+              <frame x="85" y="25" width="1750" height="970" extendedState="1" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1794655278573" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="$USER_HOME$/Desktop/rag-service">
+          <value>
+            <RecentProjectMetaInfo displayName="rag-service, autonomous-agent" frameTitle="rag-service – llm.py" projectWorkspaceId="3LaypvW78Qci8gKOLaobcze1EFQ">
+              <option name="activationTimestamp" value="1794657881036" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="7" />
+              </option>
+              <frame x="-9" y="-9" width="1938" height="1038" extendedState="6" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1794657349362" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="D:/autoflux">
+          <value>
+            <RecentProjectMetaInfo frameTitle="autoflux – config.py" projectWorkspaceId="3M5zlCUQAdhWgD0rtVp1vsls1H2">
+              <option name="activationTimestamp" value="1794726550157" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="colorInfo">
+                <RecentProjectColorInfo associatedIndex="2" />
+              </option>
+              <frame x="85" y="25" width="1750" height="970" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1794723753287" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+        <entry key="D:/signalwatch">
+          <value>
+            <RecentProjectMetaInfo opened="true" projectWorkspaceId="3M8XIWeLzCnmds5zM4yCP5LRluO">
+              <option name="activationTimestamp" value="1794733536592" />
+              <option name="binFolder" value="$APPLICATION_HOME_DIR$/bin" />
+              <option name="build" value="PY-262.10968.92" />
+              <option name="buildTimestamp" value="1789722540000" />
+              <option name="productionCode" value="PY" />
+              <option name="projectOpenTimestamp" value="1794733099108" />
+            </RecentProjectMetaInfo>
+          </value>
+        </entry>
+      </map>
+    </option>
+    <option name="lastOpenedProject" value="D:/signalwatch" />
+    <option name="lastProjectLocation" value="E:/.venv" />
+  </component>
+</application>
