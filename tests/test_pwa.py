@@ -59,7 +59,9 @@ class ServableTests(unittest.TestCase):
         html = (WEB / "index.html").read_text(encoding="utf-8")
         self.assertIn('rel="manifest"', html)
         self.assertIn("apple-touch-icon", html)
-        self.assertIn("serviceWorker", html)
+        self.assertIn('<script src="/index.js" defer></script>', html)
+        js = (WEB / "index.js").read_text(encoding="utf-8")
+        self.assertIn("serviceWorker", js)
 
 
 if __name__ == "__main__":

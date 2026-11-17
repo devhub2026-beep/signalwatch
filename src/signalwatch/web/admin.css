@@ -1,0 +1,59 @@
+  :root{--bg:#0b0d10;--panel:#14181d;--panel2:#101418;--line:#242b33;--fg:#e6edf3;--dim:#8b98a5;
+        --accent:#4b93ff;--warn:#ffb454;--green:#3fb950;--red:#f85149}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.6 "Microsoft YaHei",system-ui,sans-serif}
+  header{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line)}
+  header h1{font-size:16px;margin:0;letter-spacing:.5px}
+  .badge{font-size:12px;padding:2px 8px;border-radius:9px;border:1px solid var(--line);color:var(--dim)}
+  .badge.on{color:var(--green);border-color:#234}
+  .wrap{max-width:1100px;margin:0 auto;padding:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+  h2{font-size:14px;margin:0 0 12px;color:var(--dim);font-weight:600;letter-spacing:.5px}
+  input,select,button{font:inherit;color:var(--fg);background:var(--panel2);border:1px solid var(--line);
+        border-radius:8px;padding:8px 10px;outline:none}
+  input:focus,select:focus{border-color:var(--accent)}
+  button{cursor:pointer;background:var(--accent);border-color:var(--accent);color:#04101f;font-weight:600}
+  button.ghost{background:transparent;color:var(--fg);border-color:var(--line);font-weight:400}
+  button.danger{background:transparent;color:var(--red);border-color:#4a2326}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--dim);font-weight:500}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .muted{color:var(--dim)}
+  .tabs{display:flex;gap:8px;margin-bottom:14px}
+  .tab{padding:6px 12px;border-radius:9px;border:1px solid var(--line);color:var(--dim);cursor:pointer}
+  .tab.on{color:var(--fg);border-color:var(--accent)}
+  .kpi{display:flex;gap:22px;flex-wrap:wrap}
+  .kpi div{min-width:110px}
+  .kpi b{display:block;font-size:22px}
+  .err{color:var(--red);min-height:20px}
+  #login{max-width:360px;margin:12vh auto}
+  .hide{display:none}
+  .pill{padding:1px 7px;border-radius:8px;font-size:12px;border:1px solid var(--line);color:var(--dim)}
+  button.ghost{background:transparent;color:var(--fg);border-color:var(--line);font-weight:500}
+  .btn-ghost{padding:6px 10px;border-radius:9px;border:1px solid var(--line);color:var(--dim);text-decoration:none;font-size:13px}
+  #items tr[data-id]{cursor:pointer}
+  #items tr.sel{background:rgba(91,140,255,.16)}
+  .chk{display:flex;align-items:center;gap:8px;padding:6px 0}
+  #setform .chk input{width:16px;height:16px}
+  #items{width:100%;table-layout:fixed}
+  #items th:nth-child(1){width:132px}
+  #items th:nth-child(2){width:78px}
+  #items th:nth-child(3){width:88px}
+  #items th:nth-child(5){width:250px}
+  #items td{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #items td.row{display:flex;flex-wrap:nowrap;gap:6px;overflow:visible}
+  #items td.row button{padding:3px 8px;font-size:12px;white-space:nowrap}
+
+/* CSP 兼容：原来的 style 属性改成这些工具类。 */
+.flex1{flex:1}
+.col-stretch{flex-direction:column;align-items:stretch}
+.fs12{font-size:12px}
+.mt8{margin-top:8px}.mt10{margin-top:10px}.mt14{margin-top:14px}.mt16{margin-top:16px}.mt22{margin-top:22px}
+.mb10{margin-bottom:10px}.mb12{margin-bottom:12px}
+.w70{width:70px}.w80{width:80px}.w90{width:90px}.w100{width:100%}.w110{width:110px}
+.w140{width:140px}.w150{width:150px}.w180{width:180px}.w190{width:190px}.w200{width:200px}
+.w220{width:220px}.w240{width:240px}.w260{width:260px}.w280{width:280px}
+.text-green{color:var(--green)}.text-red{color:var(--red)}.text-warn{color:var(--warn)}
+.foot-note{color:var(--dim);font-size:12px}
+.email-input{width:190px;padding:4px 8px}

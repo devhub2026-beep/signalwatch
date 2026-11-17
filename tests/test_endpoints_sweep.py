@@ -63,7 +63,7 @@ class EndpointSweepTests(unittest.TestCase):
 
     def test_item_text_endpoint(self) -> None:
         item_id = self._seed_item()
-        res = self.client.get(f"/api/items/{item_id}/text")
+        res = self.client.get(f"/api/items/{item_id}/text", headers=self.auth)
         self.assertEqual(res.status_code, 200)
         self.assertIn("text", res.json())
 
@@ -108,7 +108,7 @@ class EndpointSweepTests(unittest.TestCase):
         self.assertTrue(res.json()["ok"])
 
     def test_logout_clears_cookie(self) -> None:
-        res = self.client.post("/api/auth/logout")
+        res = self.client.post("/api/auth/logout", headers={"X-CSRF-Token": self.client.cookies.get("sw_csrf")})
         self.assertEqual(res.status_code, 200)
         me = self.client.get("/api/auth/me")
         self.assertEqual(me.status_code, 401, "登出后不该还能读到当前用户")

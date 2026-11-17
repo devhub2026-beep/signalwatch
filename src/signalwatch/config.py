@@ -47,7 +47,7 @@ class Settings:
     backoff_base: float = 30.0
     max_backoff: float = 900.0
     http_timeout: float = 25.0
-    user_agent: str = "signalwatch/0.1 (+local watch tool; polite crawler)"
+    user_agent: str = "signalwatch/0.2 (+local watch tool; polite crawler)"
     # 每个源每轮最多取多少条（防止第一次就把几万条全拉进本地库）。
     page_size: int = 30
 

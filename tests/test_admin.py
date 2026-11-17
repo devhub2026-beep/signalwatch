@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -209,3 +210,116 @@ class WorkbenchTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class JobStateMachineTests(unittest.TestCase):
+    """任务六态：状态机把非法迁移挡在代码里，不靠页面自觉。"""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.conn = db.connect(Path(self.tmp.name) / "t.db")
+        db.init_db(self.conn)
+
+    def tearDown(self) -> None:
+        self.conn.close()
+        self.tmp.cleanup()
+
+    def _job(self) -> int:
+        return admin.enqueue_job(self.conn, "source", "cninfo", by="admin")
+
+    def test_six_states_are_declared(self) -> None:
+        self.assertEqual(admin.JOB_STATES,
+                         ("queued", "running", "paused", "failed", "done", "cancelled"))
+        self.assertEqual(set(admin.STATE_TEXT), set(admin.JOB_STATES))
+
+    def test_happy_path_queued_running_done(self) -> None:
+        jid = self._job()
+        admin.claim_job(self.conn)
+        admin.finish_job(self.conn, jid, ok=True, result="抓到 30 条")
+        self.assertEqual(admin.job_detail(self.conn, jid)["status"], "done")
+
+    def test_done_is_terminal(self) -> None:
+        jid = self._job()
+        admin.claim_job(self.conn)
+        admin.finish_job(self.conn, jid, ok=True)
+        for fn in (admin.retry_job, admin.cancel_job, admin.pause_job):
+            with self.assertRaises(admin.JobStateError):
+                fn(self.conn, jid)
+
+    def test_pause_and_resume(self) -> None:
+        jid = self._job()
+        admin.claim_job(self.conn)
+        admin.pause_job(self.conn, jid)
+        self.assertEqual(admin.job_detail(self.conn, jid)["status"], "paused")
+        admin.resume_job(self.conn, jid)
+        self.assertEqual(admin.job_detail(self.conn, jid)["status"], "queued")
+        self.assertIsNotNone(admin.claim_job(self.conn))
+
+    def test_failed_can_retry_but_not_finish(self) -> None:
+        jid = self._job()
+        admin.claim_job(self.conn)
+        admin.finish_job(self.conn, jid, ok=False, error="boom")
+        with self.assertRaises(admin.JobStateError):
+            admin.finish_job(self.conn, jid, ok=True)
+        admin.retry_job(self.conn, jid)
+        self.assertEqual(admin.job_detail(self.conn, jid)["status"], "queued")
+
+    def test_cancelled_is_terminal(self) -> None:
+        jid = self._job()
+        admin.cancel_job(self.conn, jid)
+        with self.assertRaises(admin.JobStateError):
+            admin.resume_job(self.conn, jid)
+
+    def test_unknown_job_and_state(self) -> None:
+        with self.assertRaises(admin.JobStateError):
+            admin.pause_job(self.conn, 9999)
+        jid = self._job()
+        with self.assertRaises(admin.JobStateError):
+            admin._transition(self.conn, jid, "exploded")
+
+    def test_counts_include_new_states(self) -> None:
+        jid = self._job()
+        admin.claim_job(self.conn)
+        admin.pause_job(self.conn, jid)
+        counts = admin.job_counts(self.conn)
+        self.assertEqual(counts["paused"], 1)
+        self.assertEqual(set(counts), set(admin.JOB_STATES))
+
+
+class KeysetPagingTests(unittest.TestCase):
+    """深翻页不能靠 OFFSET：10 万行时 OFFSET 9 万要 0.87 秒，游标 54 毫秒。"""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.conn = db.connect(Path(self.tmp.name) / "t.db")
+        db.init_db(self.conn)
+        now = int(time.time() * 1000)
+        with db.guard(self.conn), self.conn:
+            for i in range(120):
+                self.conn.execute(
+                    "INSERT INTO items(fingerprint, source, external_id, kind, title, content_hash,"
+                    " published_at, first_seen_at, last_seen_at)"
+                    " VALUES(?,?,?,?,?,?,?,?,?)",
+                    (f"fp{i}", "cninfo", f"e{i}", "announcement", f"第{i}条", f"h{i}",
+                     now + i, now, now))
+
+    def tearDown(self) -> None:
+        self.conn.close()
+        self.tmp.cleanup()
+
+    def test_cursor_pages_cover_everything_once(self) -> None:
+        seen, cursor = [], None
+        for _ in range(20):
+            rows, total = admin.item_page(self.conn, limit=25, before=cursor)
+            if not rows:
+                break
+            seen += [r["id"] for r in rows]
+            cursor = (rows[-1]["published_at"], rows[-1]["id"])
+            self.assertEqual(total, 120)
+        self.assertEqual(len(seen), 120)
+        self.assertEqual(len(set(seen)), 120)
+
+    def test_cursor_is_strictly_descending(self) -> None:
+        rows, _ = admin.item_page(self.conn, limit=10)
+        keys = [(r["published_at"], r["id"]) for r in rows]
+        self.assertEqual(keys, sorted(keys, reverse=True))

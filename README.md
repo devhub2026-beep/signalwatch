@@ -1,7 +1,7 @@
 # signalwatch · 盯梢机器
 
 把公开信息源盯住：每几分钟扫一遍，**只处理新增和内容变化的条目**，在本地时间线上看，点开是原文。
-不登录、不上传、不采集个人数据，只读公开页面。桌面端常驻、右下角弹窗提醒，另带一套管理员后台。
+公开时间线无需登录即可阅读；正文、已读/收藏和抓取按角色鉴权。不上传、不采集个人数据，只读公开页面。桌面端常驻、右下角弹窗提醒，另带一套管理员后台。
 
 ## 它解决什么问题
 
@@ -77,7 +77,7 @@
 | 首轮全量抓取 | **约 5 秒**，入库 **100 条**（早期四源）；加两个政府源后又入库 46 条 |
 | 第二轮（同样 5 秒） | 新增 **0** 条 —— 去重生效 |
 | 数据库 | 156 KB → 加源后约 **200 KB**（SQLite，WAL） |
-| 单元测试 | **192 个，36 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / PWA 安装条件 / 桌面 11 页渲染） |
+| 单元测试 | **209 个，85 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / PWA 安装条件 / 桌面 12 页渲染 + 审计页） |
 | PDF 正文 | 巨潮公告 **有文字层**：实测 3 条共抠出 **14353 字**，网页上点「看正文」直接读全文（`pdftext.py`，纯标准库，靠 ToUnicode 还原汉字子集字体） |
 | 跨源去重 | 标题归一后 Jaccard ≥ 0.82、72 小时内、跨源才判重；早的那条留、晚的标 `dup_of` |
 | 备份 | `python run.py backup --keep 3` → `data/backups/backup-20261116-181845.db`（1068 KB）；启动时距上次超 20 小时自动备一次 |
@@ -170,7 +170,7 @@ docker build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple 
 
 ## 接口
 
-共 **60 条路由**（`tests/test_docs.py` 会核对：代码里每条路由都必须在下面出现，否则测试失败）。
+共 **64 条路由**（`tests/test_docs.py` 会核对：代码里每条路由都必须在下面出现，否则测试失败）。
 
 **页面与 PWA**
 
@@ -178,6 +178,7 @@ docker build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple 
 |---|---|---|
 | GET | `/` | 时间线（手机可装成 App） |
 | GET | `/admin` | 管理台 |
+| GET | `/index.css`、`/index.js`、`/admin.css`、`/admin.js` | 外置前端样式与脚本（CSP 不允许内联） |
 | GET | `/manifest.webmanifest`、`/sw.js` | PWA 清单与 Service Worker |
 | GET | `/icon-192.png`、`/icon-512.png`、`/apple-touch-icon.png` | 图标 |
 | GET | `/docs`、`/redoc`、`/openapi.json`、`/docs/oauth2-redirect` | FastAPI 自带的交互式接口文档 |
@@ -189,20 +190,22 @@ docker build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple 
 | GET | `/api/health` | 版本、运行状态 |
 | GET | `/api/metrics` | 进程内指标：请求数、RPS、p50/p95/p99、状态码分布、最热路径 |
 | GET | `/api/items?source=&q=&limit=&since=` | 时间线（支持搜索；带上 `read`/`starred` 按当前用户算） |
-| GET | `/api/items/{id}/text` | 某条的 PDF 正文（没抠到就是空串） |
+| GET | `/api/items/{id}/text` | 某条的 PDF 正文（viewer+；没抠到就是空串） |
 | GET | `/api/stats`、`/api/sources` | 统计 / 每个源的节奏与失败数 |
 | GET | `/api/events/stats` | SSE，每 3 秒推一次计数（有新条目立刻推） |
 | — | 所有响应 | 带 `X-Request-ID` 与 `X-Response-Time`，并附五个安全响应头 |
-| POST | `/api/crawl` | 立刻抓一轮（正在跑返回 409） |
-| POST | `/api/items/{id}/read`、`/api/items/{id}/star` | 标记已读 / 收藏（**按用户隔离**） |
+| POST | `/api/crawl` | 立刻抓一轮（analyst+；正在跑返回 409） |
+| POST | `/api/items/{id}/read`、`/api/items/{id}/star` | 标记已读 / 收藏（viewer+，**按用户隔离**） |
 
 **登录与用户**
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/auth/login`、`/api/auth/logout` | 登录（同时下发 cookie）、退出 |
+| POST | `/api/auth/login`、`/api/auth/logout` | 登录（同时下发 Secure-ready cookie 与 CSRF cookie）、退出 |
 | GET | `/api/auth/me` | 当前用户 |
-| POST | `/api/auth/password` | 自己改口令（改完旧令牌作废） |
+| POST | `/api/auth/password` | 自己改口令（改完旧令牌作废）；默认 `admin123` 首次登录必须先改密 |
+
+Cookie 认证的写请求必须带 `X-CSRF-Token`（值来自登录响应或 `sw_csrf` cookie）；Bearer 客户端不需要 CSRF 头。HTTPS 下两个 cookie 都带 `Secure`。
 | GET/POST | `/api/users` | 用户列表 / 建用户（admin） |
 | PATCH/DELETE | `/api/users/{name}` | 改角色、停用、改口令、改邮箱 / 删除（admin） |
 | GET | `/api/admin/roles` | 角色清单与权限位 |
@@ -244,6 +247,8 @@ docker build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple 
 然后在 `sources/__init__.py` 的 `default_sources()` 登记一行。调度器、接口、页面都从这张表读。
 
 ## 部署给别人
+
+完整步骤（三种跑法互斥、镜像中转、升级、排错表）见 [docs/DEPLOY.md](docs/DEPLOY.md)。
 
 ```bash
 docker compose up --build      # http://127.0.0.1:8766
@@ -307,16 +312,52 @@ sqlite3.DatabaseError: database disk image is malformed
 
 `src/signalwatch/db.py` 现在按 `SIGNALWATCH_JOURNAL` 决定 journal 模式（默认 WAL，Docker 里是 delete），`tests/test_core.py::JournalModeTests` 两条用例盯着这个行为。
 
+## 任务六态（状态机在代码里，页面只是按钮）
+
+任务不是「有状态字段」，而是有一张**允许迁移表**。落在 `admin.JOB_TRANSITIONS`：
+
+```
+queued    → running, cancelled
+running   → done, failed, paused, cancelled
+paused    → queued, cancelled
+failed    → queued, cancelled
+done      → （终态）
+cancelled → （终态）
+```
+
+- 非法迁移抛 `JobStateError`，接口层转成 **409** 并带原因（例如「任务 #3 不能从「已取消」变成「排队中」」），不是 200 假装成功。
+- 接口：`POST /api/admin/jobs/{id}/retry|cancel|pause|resume`；桌面任务页有暂停 / 继续 / 取消 / 重试四个按钮，网页任务页按当前状态只显示可用的那几个。
+- 验证：`tests/test_admin.py::JobStateMachineTests`（8 例，含「done 是终态」「failed 只能重试不能完成」「未知状态/未知任务」）与 `tests/test_api_business.py::JobStateApiTests`（4 例，409 / 400 / 六态计数）。
+
+## 10 万行量测（SQLite 能不能扛住）
+
+`python tools/scale_probe.py 100000` 在临时目录造 10 万条，跑完删掉。数字（`p50`，20 次取中位）：
+
+| 操作 | 耗时 | 说明 |
+| --- | --- | --- |
+| 首屏 30 条 | **0.4 ms** | `idx_items_pin_pub`（pinned, published_at, id） |
+| 按公司搜索 | **0.4 ms** | LIKE 扫描，10 万行下仍是毫秒级 |
+| 未读数 | **7.8 ms** | `marks` 按 user 索引 |
+| 深翻页：`offset=90000` | **866 ms** | OFFSET 要先扫再丢，越翻越慢 |
+| 深翻页：游标 `before_pub/before_id` | **53.7 ms** | 键集分页，常数级 |
+| 7 天报表 | **300 ms** | 四个聚合；`by_source` 必须 `INDEXED BY idx_items_first_seen`，否则全扫 876 ms |
+| 库文件 | **37.3 MB** | 10 万条 + 索引 |
+
+两个结论：
+1. **列表接口不要用 `page=3000`**。`GET /api/admin/items` 支持 `before_pub` + `before_id`（响应里带 `next_cursor`），深页用它，比 OFFSET 快 16 倍。
+2. **`report()` 里的 `INDEXED BY` 不能删**。SQLite 会误选 `idx_items_source` 做全扫再分组（10 万行 876 ms），强制走 `first_seen_at` 索引后 24 ms。
+
 ## 迁移台账（这个库跑过哪几步）
 
 `python run.py migrate` 打印每一步的版本、时间、说明：
 
 ```
 数据库 D:\signalwatch\data\signalwatch.db
-代码版本 9，台账最高 9，已记录 9 步
+代码版本 10，台账最高 10，已记录 10 步
   v1  2026-11-17 21:03  初始表：sources / items / revisions / runs / schema_meta
   ...
   v9  2026-11-17 21:03  分类入库即归类：taxonomy.ensure_seeded + backfill
+  v10 2026-11-17 21:03  users.must_change_password：默认口令首次登录强制修改
 ```
 
 - 台账表 `schema_migrations(version, name, applied_at)`，由 `db.init_db()` 在迁移跑完后写入（老库第一次会一次性补记 1..N）；
@@ -356,7 +397,7 @@ src/signalwatch/
   desktop.py     tkinter 十二页常驻窗口 + 浮窗提醒
   sources/       cninfo / rss / arxiv / html_list（统计局、政府采购）
   web/           index.html（时间线）、admin.html（管理台）、manifest、sw.js
-tests/           192 个用例（去重、并发、源解析、路由、权限、审计、报表、任务队列、邮件推送、配置隔离、PDF 抠字、备份恢复、跨源去重、Excel、PWA、桌面渲染）
+tests/           221 个用例（去重、并发、源解析、路由、权限、审计、报表、任务六态、邮件推送、配置隔离、PDF 抠字、备份恢复、跨源去重、Excel、PWA、桌面 12 页渲染）
 docs/            验收截图
 ```
 

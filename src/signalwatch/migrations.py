@@ -1,4 +1,4 @@
-"""迁移台账：这个库是怎么走到第 9 版的，谁在什么时候升的。
+"""迁移台账：这个库是怎么走到当前版本的，谁在什么时候升的。
 
 之前只有一个 `schema_meta.version` 数字——它只说明「现在是第几版」，
 说明不了「哪几步跑过、哪步没跑、什么时候跑的」。上线出问题时，
@@ -27,6 +27,7 @@ STEPS: tuple[tuple[int, str], ...] = (
     (7, "items.body_text/body_bytes：PDF 正文"),
     (8, "marks 按用户隔离（PRIMARY KEY(user_id,item_id)）；marks_legacy 一次性搬迁"),
     (9, "分类入库即归类：taxonomy.ensure_seeded + backfill；schema_meta 跟随迁移更新"),
+    (10, "users.must_change_password：默认口令首次登录强制修改"),
 )
 
 DDL = """

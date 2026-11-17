@@ -9,9 +9,11 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
+from signalwatch import auth
 from signalwatch.api import create_app
 from signalwatch.config import Settings
 from signalwatch.db import connect, init_db
@@ -46,8 +48,11 @@ class BusinessApiTests(unittest.TestCase):
         self.app = create_app(self.settings, autostart=False)
         self.client = TestClient(self.app)
         self.client.__enter__()
+        conn = connect(self.settings.db_path)
+        auth.set_password(conn, "admin", "test-admin-pass")
+        conn.close()
         token = self.client.post("/api/auth/login",
-                                 json={"username": "admin", "password": "admin123"}).json()["token"]
+                                 json={"username": "admin", "password": "test-admin-pass"}).json()["token"]
         self.h = {"Authorization": f"Bearer {token}"}
 
     def tearDown(self) -> None:
@@ -139,8 +144,11 @@ class BusinessApiTests(unittest.TestCase):
         self.assertIn(jid, [j["id"] for j in listed["jobs"]])
         self.assertGreaterEqual(listed["counts"]["queued"], 1)
 
+        # 排队中的任务不能「重试」（那是失败态的动作），要撤就取消
         retry = self.client.post(f"/api/admin/jobs/{jid}/retry", headers=self.h)
-        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(retry.status_code, 409)
+        cancel = self.client.post(f"/api/admin/jobs/{jid}/cancel", headers=self.h)
+        self.assertEqual(cancel.status_code, 200)
         bad = self.client.post(f"/api/admin/jobs/{jid}/nonsense", headers=self.h)
         self.assertEqual(bad.status_code, 400)
 
@@ -179,8 +187,11 @@ class MailAndAuditTests(unittest.TestCase):
         self.app = create_app(self.settings, autostart=False)
         self.client = TestClient(self.app)
         self.client.__enter__()
+        conn = connect(self.settings.db_path)
+        auth.set_password(conn, "admin", "test-admin-pass")
+        conn.close()
         token = self.client.post("/api/auth/login",
-                                 json={"username": "admin", "password": "admin123"}).json()["token"]
+                                 json={"username": "admin", "password": "test-admin-pass"}).json()["token"]
         self.h = {"Authorization": f"Bearer {token}"}
 
     def tearDown(self) -> None:
@@ -236,7 +247,7 @@ class MailAndAuditTests(unittest.TestCase):
                                json={"old": "wrong", "new": "another123"})
         self.assertEqual(bad.status_code, 400)
         ok = self.client.post("/api/auth/password", headers=self.h,
-                              json={"old": "admin123", "new": "another123"})
+                              json={"old": "test-admin-pass", "new": "another123"})
         self.assertEqual(ok.status_code, 200)
         # 旧令牌作废
         self.assertEqual(self.client.get("/api/auth/me", headers=self.h).status_code, 401)
@@ -258,6 +269,9 @@ class RuleApiTests(unittest.TestCase):
         self.app = create_app(self.settings, autostart=False)
         self.client = TestClient(self.app)
         self.client.__enter__()
+        conn = connect(self.settings.db_path)
+        auth.set_password(conn, "admin", "test-admin-pass")
+        conn.close()
 
     def tearDown(self) -> None:
         try:
@@ -265,9 +279,10 @@ class RuleApiTests(unittest.TestCase):
         finally:
             self.tmp.cleanup()
 
-    def _login(self, username="admin", password="admin123") -> None:
+    def _login(self, username="admin", password="test-admin-pass") -> None:
         r = self.client.post("/api/auth/login", json={"username": username, "password": password})
         self.assertEqual(r.status_code, 200, r.text)
+        self.client.headers["X-CSRF-Token"] = r.json()["csrf_token"]
 
     def test_anonymous_cannot_list(self) -> None:
         self.assertEqual(TestClient(self.app).get("/api/admin/rules").status_code, 401)
@@ -302,3 +317,55 @@ class RuleApiTests(unittest.TestCase):
         vc.__enter__()
         vc.post("/api/auth/login", json={"username": "v1", "password": "viewer123"})
         self.assertEqual(vc.post("/api/admin/rules", json={"keyword": "x"}).status_code, 403)
+
+
+class JobStateApiTests(unittest.TestCase):
+    """任务状态机的接口层：非法迁移必须 409，而不是 200 假装成功。"""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.settings = Settings(home=Path(self.tmp.name), min_interval=0.0)
+        self.patches = [mock.patch("signalwatch.config.SETTINGS", self.settings),
+                        mock.patch("signalwatch.api.SETTINGS", self.settings)]
+        for p in self.patches:
+            p.start()
+        self.client = TestClient(create_app())
+        self.client.__enter__()
+        conn = connect(self.settings.db_path)
+        auth.set_password(conn, "admin", "test-admin-pass")
+        conn.close()
+        res = self.client.post("/api/auth/login", json={"username": "admin", "password": "test-admin-pass"})
+        self.client.headers["X-CSRF-Token"] = res.json()["csrf_token"]
+
+    def tearDown(self) -> None:
+        self.client.__exit__(None, None, None)
+        for p in self.patches:
+            p.stop()
+        self.tmp.cleanup()
+
+    def _job(self) -> int:
+        r = self.client.post("/api/admin/jobs", json={"kind": "source", "target": "cninfo", "priority": 0})
+        self.assertEqual(r.status_code, 201)
+        return r.json()["id"]
+
+    def test_six_states_in_counts(self) -> None:
+        r = self.client.get("/api/admin/jobs")
+        counts = r.json()["counts"]
+        for state in ("queued", "running", "paused", "failed", "done", "cancelled"):
+            self.assertIn(state, counts)
+
+    def test_cancel_then_resume_is_409(self) -> None:
+        jid = self._job()
+        self.assertEqual(self.client.post(f"/api/admin/jobs/{jid}/cancel").status_code, 200)
+        r = self.client.post(f"/api/admin/jobs/{jid}/resume")
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("不能从", r.json()["detail"])
+
+    def test_unknown_action_is_400(self) -> None:
+        jid = self._job()
+        self.assertEqual(self.client.post(f"/api/admin/jobs/{jid}/explode").status_code, 400)
+
+    def test_pause_requires_running(self) -> None:
+        jid = self._job()
+        r = self.client.post(f"/api/admin/jobs/{jid}/pause")
+        self.assertEqual(r.status_code, 409)

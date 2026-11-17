@@ -23,7 +23,7 @@ from tkinter import ttk
 import webbrowser
 from dataclasses import dataclass
 from datetime import datetime
-from tkinter import filedialog
+from tkinter import filedialog, simpledialog
 from typing import Iterable
 
 from . import admin, audit, auth, board, db, notify
@@ -256,6 +256,7 @@ class App:
         self.start_page = start_page
         self.crawler = crawler
         self.conn = crawler.conn
+        auth.enforce_default_password_policy(self.conn)
         self.paused = paused
         self.user: dict | None = None
         self.page = "home"
@@ -325,7 +326,7 @@ class App:
         guest.pack(pady=(14, 0))
         guest.bind("<Button-1>", lambda _e: self._enter(None))
 
-        tk.Label(wrap, text="首次启动会自动建一个 admin / admin123，进去后请先改口令",
+        tk.Label(wrap, text="首次启动会自动建一个 admin / admin123，首次登录必须改口令",
                  fg=DIM, bg=BG, font=(FONT, 8)).pack(pady=(16, 0))
 
     def _do_login(self) -> None:
@@ -335,9 +336,36 @@ class App:
         except Exception as exc:  # 口令错 / 停用
             self.login_msg.configure(text=str(exc))
             return
+        account = user["user"] if "user" in user else user
+        if account.get("must_change_password"):
+            new_password = self._force_password_change(name)
+            if new_password is None:
+                return
+            user = auth.login(self.conn, name, new_password)
+            account = user["user"] if "user" in user else user
         audit.log(self.conn, name, "auth.login", name, "桌面端登录")
         self._remember(user)
-        self._enter(user["user"] if "user" in user else user)
+        self._enter(account)
+
+    def _force_password_change(self, username: str) -> str | None:
+        """默认口令账号只能走改密流程；成功返回新口令，取消则留在登录页。"""
+        new = simpledialog.askstring("首次登录必须改密", "新口令（至少 6 位）",
+                                     show="●", parent=self.root)
+        if new is None:
+            self.login_msg.configure(text="必须先修改默认口令，才能进入系统")
+            return None
+        confirm = simpledialog.askstring("首次登录必须改密", "再输入一次新口令",
+                                         show="●", parent=self.root)
+        if new != confirm:
+            self.login_msg.configure(text="两次输入不一致，请重新登录后再改")
+            return None
+        try:
+            auth.set_password(self.conn, username, new)
+        except ValueError as exc:
+            self.login_msg.configure(text=str(exc))
+            return None
+        audit.log(self.conn, username, "auth.default_password_changed", username, "桌面端首次登录改密")
+        return new
 
     # ---------- 记住我：下次打开直接进 ----------
     def _remember_file(self):
@@ -364,6 +392,10 @@ class App:
             data = json.loads(self._remember_file().read_text(encoding="utf-8"))
             user = auth.user_from_token(self.conn, data.get("token", ""))
         except Exception:
+            return
+        if user.get("must_change_password"):
+            self._forget()
+            self.login_msg.configure(text="默认口令尚未修改，请登录后先改密")
             return
         self.user = user
         self._build_shell()
@@ -400,7 +432,8 @@ class App:
         for key, label in (("overview", "工作台"), ("home", "首页"), ("starred", "收藏"),
                            ("items", "条目"), ("categories", "分类"), ("rules", "订阅"),
                            ("sources", "数据源"), ("jobs", "任务"), ("reports", "报表"),
-                           ("users", "用户"), ("settings", "设置"), ("me", "我的")):
+                           ("users", "用户"), ("audit", "审计"), ("settings", "设置"),
+                           ("me", "我的")):
             p = Pill(side, label, lambda k=key: self._go(k), selected=(key == "home"),
                      height=38, padx=18, bg=SIDE)
             p.pack(fill="x", padx=14, pady=(0, 6))
@@ -428,6 +461,7 @@ class App:
         self._build_jobs()
         self._build_reports()
         self._build_users()
+        self._build_audit()
         self._build_settings()
         self._build_me()
         self._go(self.start_page)
@@ -436,7 +470,8 @@ class App:
     def _go(self, key: str) -> None:
         self.page = key
         target = {"home": "home", "starred": "home", "rules": "rules", "sources": "sources",
-                  "users": "users", "me": "me", "overview": "overview", "items": "items",
+                  "users": "users", "audit": "audit", "me": "me", "overview": "overview",
+                  "items": "items",
                   "categories": "categories", "jobs": "jobs", "reports": "reports",
                   "settings": "settings"}[key]
         for name, frame in self.pages.items():
@@ -462,6 +497,8 @@ class App:
             self._render_sources()
         elif target == "users":
             self._render_users()
+        elif target == "audit":
+            self._render_audit()
         elif target == "overview":
             self._render_overview()
         elif target == "items":
@@ -1289,8 +1326,14 @@ class App:
         for st in self.crawler.snapshot().get("sources", []):
             Pill(bar, st.get("name", "?"), lambda n=st.get("name", ""): self._new_job("source", n),
                  height=30, padx=12, bg=BG).pack(side="left", padx=(8, 0))
-        Pill(bar, "重试", self._retry_job, height=30, padx=12, bg=BG).pack(side="right")
-        Pill(bar, "取消", self._cancel_job, height=30, padx=12, bg=BG).pack(side="right", padx=(0, 8))
+        Pill(bar, "重试", lambda: self._job_action("retry"), height=30, padx=12,
+             bg=BG).pack(side="right")
+        Pill(bar, "取消", lambda: self._job_action("cancel"), height=30, padx=12,
+             bg=BG).pack(side="right", padx=(0, 8))
+        Pill(bar, "继续", lambda: self._job_action("resume"), height=30, padx=12,
+             bg=BG).pack(side="right", padx=(0, 8))
+        Pill(bar, "暂停", lambda: self._job_action("pause"), height=30, padx=12,
+             bg=BG).pack(side="right", padx=(0, 8))
 
         wrap = tk.Frame(page, bg=CARD)
         wrap.pack(fill="both", expand=True, padx=PAD, pady=(12, 12))
@@ -1360,15 +1403,20 @@ class App:
         audit.log(self.conn, self._who(), "job.enqueue", str(jid), f"{kind}:{target}")
         self._render_jobs()
 
-    def _retry_job(self) -> None:
+    def _job_action(self, act: str) -> None:
+        """暂停/继续/重试/取消都走状态机；非法迁移显示在页头，不弹异常。"""
+        fns = {"retry": admin.retry_job, "cancel": admin.cancel_job,
+               "pause": admin.pause_job, "resume": admin.resume_job}
+        fn = fns[act]
+        failed = []
         for iid in self.jobs_tree.selection():
-            admin.retry_job(self.conn, int(iid))
+            try:
+                fn(self.conn, int(iid))
+            except admin.JobStateError as exc:
+                failed.append(str(exc))
         self._render_jobs()
-
-    def _cancel_job(self) -> None:
-        for iid in self.jobs_tree.selection():
-            admin.cancel_job(self.conn, int(iid))
-        self._render_jobs()
+        if failed:
+            self.jobs_note.configure(text="；".join(failed[:2]))
 
     def _job_worker(self) -> None:
         while getattr(self, "_alive", True):
@@ -1394,6 +1442,78 @@ class App:
             except Exception as exc:
                 admin.finish_job(self.conn, job["id"], ok=False, error=f"{type(exc).__name__}: {exc}")
             self.events.put(("job", None))
+
+
+    # ================= 审计 =================
+    def _build_audit(self) -> None:
+        page = tk.Frame(self.main, bg=BG)
+        self.pages["audit"] = page
+        head = tk.Frame(page, bg=BG)
+        head.pack(fill="x", padx=PAD, pady=(18, 0))
+        tk.Label(head, text="审计", fg=FG, bg=BG, font=(FONT, 15, "bold")).pack(side="left")
+        self.audit_note = tk.Label(head, text="", fg=MUTED, bg=BG, font=(FONT, 9))
+        self.audit_note.pack(side="left", padx=(12, 0))
+
+        bar = tk.Frame(page, bg=BG)
+        bar.pack(fill="x", padx=PAD, pady=(12, 0))
+        self.audit_who = Entry(bar, "账号（可空）", width=14)
+        self.audit_who.pack(side="left", ipady=8)
+        self.audit_act = Entry(bar, "动作前缀（可空）", width=18)
+        self.audit_act.pack(side="left", padx=(8, 0), ipady=8)
+        Pill(bar, "刷新", self._render_audit, height=34, padx=14).pack(side="left", padx=(8, 0))
+        Pill(bar, "导出 CSV", self._export_audit, height=34, padx=14).pack(side="left", padx=(6, 0))
+        Pill(bar, "清理 90 天前", self._prune_audit, height=34, padx=14).pack(side="left", padx=(6, 0))
+
+        wrap = tk.Frame(page, bg=BG)
+        wrap.pack(fill="both", expand=True, padx=PAD, pady=(12, 12))
+        self.audit_tree = self._tree(
+            wrap,
+            [("at", "时间"), ("who", "账号"), ("act", "动作"), ("target", "对象"), ("detail", "详情")],
+            [140, 110, 180, 150, 520],
+        )
+        self._render_audit()
+
+    def _render_audit(self) -> None:
+        tree = getattr(self, "audit_tree", None)
+        if tree is None:
+            return
+        for row in tree.get_children():
+            tree.delete(row)
+        who = self.audit_who.value().strip() or None
+        act = self.audit_act.value().strip() or None
+        try:
+            rows = audit.query(self.conn, limit=400, username=who, action=act)
+        except Exception as exc:
+            self.audit_note.configure(text=f"读不出来：{exc}")
+            return
+        for r in rows:
+            tree.insert("", "end", values=(
+                human_day(r.get("at") or 0), r.get("username", ""),
+                r.get("action", ""), r.get("target", ""), (r.get("detail") or "")[:120],
+            ))
+        total = audit.count(self.conn)
+        self.audit_note.configure(text=f"库里共 {total} 条，这里显示最近 {len(rows)} 条")
+
+    def _export_audit(self) -> None:
+        try:
+            text = audit.export_csv(self.conn, limit=5000)
+        except Exception as exc:
+            self.audit_note.configure(text=f"导出失败：{exc}")
+            return
+        out = SETTINGS.home / "data" / f"audit-{time.strftime('%Y%m%d-%H%M%S')}.csv"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text, encoding="utf-8")
+        audit.log(self.conn, self._name(), "audit.export", str(out), "桌面端导出")
+        self.audit_note.configure(text=f"已导出 {out}")
+
+    def _prune_audit(self) -> None:
+        if (self.user or {}).get("role") != "admin":
+            self.audit_note.configure(text="只有管理员能清理")
+            return
+        removed = audit.prune(self.conn, days=90)
+        audit.log(self.conn, self._name(), "audit.prune", "90d", f"删除 {removed} 条")
+        self.audit_note.configure(text=f"删掉了 {removed} 条 90 天前的记录")
+        self._render_audit()
 
     # ================= 报表 =================
     def _build_reports(self) -> None:

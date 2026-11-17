@@ -55,7 +55,7 @@ class DocsTests(unittest.TestCase):
         self.assertEqual(missing, [], "README 缺这些路由：" + ", ".join(missing))
 
     def test_route_count_matches_claim(self) -> None:
-        # README 写着「共 51 条路由」，代码变了这句就得跟着改
+        # README 的路由总数必须随代码同步更新
         n = len(self._routes())
         self.assertIn(f"共 **{n} 条路由**", readme_text(), f"实际 {n} 条路由，README 的数字要对上")
 

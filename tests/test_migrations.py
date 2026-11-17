@@ -63,12 +63,12 @@ class MigrationLedgerTests(unittest.TestCase):
         conn.close()
 
     def test_missing_step_is_detected(self) -> None:
-        """台账里少了 v9，--check 就该红。"""
-        self.conn.execute("DELETE FROM schema_migrations WHERE version = 9")
+        """台账里少了当前版本，--check 就该红。"""
+        self.conn.execute("DELETE FROM schema_migrations WHERE version = ?", (SCHEMA_VERSION,))
         self.conn.commit()
         info = migrations.status(self.conn, SCHEMA_VERSION)
-        self.assertEqual([m["version"] for m in info["missing"]], [9])
-        self.assertEqual(info["recorded_max"], 8)
+        self.assertEqual([m["version"] for m in info["missing"]], [SCHEMA_VERSION])
+        self.assertEqual(info["recorded_max"], SCHEMA_VERSION - 1)
 
     def test_future_version_in_ledger_is_not_reported_as_pending(self) -> None:
         migrations.record(self.conn, 99, "未来的版本")

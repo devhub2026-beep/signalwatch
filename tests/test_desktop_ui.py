@@ -31,13 +31,6 @@ except Exception:  # pragma: no cover
 
 INPROC = os.environ.get("SIGNALWATCH_TK_INPROC") == "1"
 ROOT = Path(__file__).resolve().parents[1]
-CASES = (
-    "DesktopPagesInproc.test_all_pages_render",
-    "DesktopPagesInproc.test_starred_is_a_home_filter_not_a_page",
-    "DesktopPagesInproc.test_login_screen_accepts_guest",
-)
-
-
 @unittest.skipIf(not INPROC, "真实 Tk 用例只在子进程里跑（见模块文档）")
 class DesktopPagesInproc(unittest.TestCase):
     """只在子进程里跑：建真 App、切页面、销毁。"""
@@ -47,6 +40,7 @@ class DesktopPagesInproc(unittest.TestCase):
             self.skipTest("没有 tkinter")
         self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.settings = Settings(home=Path(self.tmp.name), min_interval=0.0)
+        import signalwatch.desktop  # noqa: F401  —— patch 之前必须先导入，否则取不到属性
         self.patches = [mock.patch("signalwatch.config.SETTINGS", self.settings),
                         mock.patch("signalwatch.desktop.SETTINGS", self.settings)]
         for p in self.patches:
@@ -89,12 +83,22 @@ class DesktopPagesInproc(unittest.TestCase):
     def test_all_pages_render(self) -> None:
         app = self._app()
         app.root.update_idletasks()
-        pages = ["overview", "home", "items", "categories", "rules",
-                 "sources", "jobs", "reports", "users", "settings", "me"]
+        pages = ["overview", "home", "items", "categories", "rules", "sources",
+                 "jobs", "reports", "users", "audit", "settings", "me"]
         for name in pages:
             app._go(name)
             app.root.update_idletasks()
             self.assertTrue(app.pages[name].winfo_exists(), name)
+
+    def test_audit_page_lists_log_rows(self) -> None:
+        from signalwatch import audit
+
+        app = self._app()
+        audit.log(app.conn, "admin", "test.audit", "obj-1", "明细")
+        app._go("audit")
+        app.root.update_idletasks()
+        rows = app.audit_tree.get_children()
+        self.assertGreaterEqual(len(rows), 1)
 
     def test_starred_is_a_home_filter_not_a_page(self) -> None:
         app = self._app()
@@ -146,6 +150,9 @@ class DesktopPagesTests(unittest.TestCase):
 
     def test_all_pages_render(self) -> None:
         self._run("DesktopPagesInproc.test_all_pages_render")
+
+    def test_audit_page_lists_log_rows(self) -> None:
+        self._run("DesktopPagesInproc.test_audit_page_lists_log_rows")
 
     def test_starred_is_a_home_filter_not_a_page(self) -> None:
         self._run("DesktopPagesInproc.test_starred_is_a_home_filter_not_a_page")

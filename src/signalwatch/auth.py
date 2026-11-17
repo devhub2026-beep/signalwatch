@@ -142,6 +142,7 @@ def _row_to_user(row: sqlite3.Row) -> dict:
         "last_login_at": int(row["last_login_at"] or 0),
         "email": (row["email"] if "email" in keys else "") or "",
         "display_name": (row["display_name"] if "display_name" in keys else "") or "",
+        "must_change_password": bool(row["must_change_password"]) if "must_change_password" in keys else False,
     }
 
 
@@ -158,7 +159,8 @@ def get_user(conn, username: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
 
 
-def create_user(conn, username: str, password: str, role: str = "viewer", email: str = "") -> int:
+def create_user(conn, username: str, password: str, role: str = "viewer", email: str = "",
+                *, must_change_password: bool = False) -> int:
     username = (username or "").strip()
     if not username:
         raise ValueError("用户名不能为空")
@@ -168,9 +170,10 @@ def create_user(conn, username: str, password: str, role: str = "viewer", email:
     with conn:
         try:
             cur = conn.execute(
-                "INSERT INTO users(username, pwd_salt, pwd_hash, role, enabled, created_at, email)"
-                " VALUES (?,?,?,?,1,?,?)",
-                (username, salt, digest, role, int(time.time() * 1000), (email or "").strip()),
+                "INSERT INTO users(username, pwd_salt, pwd_hash, role, enabled, created_at, email,"
+                " must_change_password) VALUES (?,?,?,?,1,?,?,?)",
+                (username, salt, digest, role, int(time.time() * 1000), (email or "").strip(),
+                 1 if must_change_password else 0),
             )
         except sqlite3.IntegrityError:
             raise ValueError(f"用户名已存在：{username}") from None
@@ -191,8 +194,8 @@ def set_password(conn, username: str, password: str) -> None:
     salt, digest = hash_password(password)
     with conn:
         cur = conn.execute(
-            "UPDATE users SET pwd_salt = ?, pwd_hash = ?, token_version = token_version + 1"
-            " WHERE username = ?",
+            "UPDATE users SET pwd_salt = ?, pwd_hash = ?, token_version = token_version + 1,"
+            " must_change_password = 0 WHERE username = ?",
             (salt, digest, username),
         )
     if cur.rowcount == 0:
@@ -268,5 +271,16 @@ def seed_admin(conn, username: str = "admin", password: str = "admin123") -> boo
     if count_users(conn) > 0:
         return False
     password = os.environ.get("SIGNALWATCH_ADMIN_PASSWORD") or password
-    create_user(conn, username, password, role="admin")
+    create_user(conn, username, password, role="admin",
+                must_change_password=(password == "admin123"))
     return True
+
+
+def enforce_default_password_policy(conn) -> None:
+    # 老库也要兜底：admin 仍是默认口令时，下次登录必须先改密。
+    row = get_user(conn, "admin")
+    if row is None:
+        return
+    if verify_password("admin123", row["pwd_salt"], row["pwd_hash"]):
+        with conn:
+            conn.execute("UPDATE users SET must_change_password = 1 WHERE id = ?", (row["id"],))

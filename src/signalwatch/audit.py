@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import time
 
+from .board import csv_safe
+
 
 def log(conn, username: str, action: str, target: str = "", detail: str = "") -> None:
     try:
@@ -77,5 +79,6 @@ def export_csv(conn, *, limit: int = 5000) -> str:
     writer = csv.writer(buf)
     writer.writerow(["时间", "账号", "动作", "对象", "详情"])
     for r in rows:
-        writer.writerow([r["at"], r["username"], r["action"], r["target"], r["detail"]])
+        writer.writerow([csv_safe(x) for x in
+                         [r["at"], r["username"], r["action"], r["target"], r["detail"]]])
     return buf.getvalue()

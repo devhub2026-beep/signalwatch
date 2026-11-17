@@ -1,13 +1,15 @@
 """HTTP 层：本地 Web 应用 + JSON API。
 
 默认只绑 127.0.0.1——这是"本地不暴露"的意思：
-不监听 0.0.0.0、不建隧道、不带认证也不需要认证。
-要给自己手机在同一 Wi-Fi 下看，显式传 --host 0.0.0.0。
+不监听 0.0.0.0、不建隧道。公开时间线可读，正文与写操作按角色鉴权。
+要给自己手机在同一 Wi-Fi 下看，显式传 --host 0.0.0.0，并配置 HTTPS。
 """
 
 from __future__ import annotations
 
+import hmac
 import json
+import secrets
 import threading
 import time
 import uuid
@@ -65,12 +67,12 @@ class ItemEdit(BaseModel):
 
 
 class ItemsStateIn(BaseModel):
-    ids: list[int]
+    ids: list[int] = Field(max_length=500)
     state: str
 
 
 class ItemsDeleteIn(BaseModel):
-    ids: list[int]
+    ids: list[int] = Field(max_length=500)
 
 
 class CategoryIn(BaseModel):
@@ -167,7 +169,7 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
         "Content-Security-Policy": (
             "default-src 'self'; img-src 'self' data:; "
-            "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+            "style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; "
             "connect-src 'self'; frame-ancestors 'none'"
         ),
     }
@@ -243,7 +245,6 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         return JSONResponse(status_code=500, content={
             "error": "服务内部出错了，已经记进审计日志",
             "detail": "服务内部出错了，已经记进审计日志",
-            "kind": type(exc).__name__,
             "path": request.url.path,
         })
 
@@ -252,6 +253,7 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         init_db(crawler.conn)
         if auth.seed_admin(crawler.conn):
             audit.log(crawler.conn, "system", "user.seed", "admin", "首次启动，建了默认管理员")
+        auth.enforce_default_password_policy(crawler.conn)
         if autostart:
             crawler.start()
             _start_mail_loop()
@@ -298,6 +300,22 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
     def index() -> FileResponse:
         return FileResponse(WEB_DIR / "index.html", media_type="text/html; charset=utf-8")
 
+    @app.get("/index.css")
+    def index_css() -> FileResponse:
+        return FileResponse(WEB_DIR / "index.css", media_type="text/css; charset=utf-8")
+
+    @app.get("/index.js")
+    def index_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "index.js", media_type="application/javascript; charset=utf-8")
+
+    @app.get("/admin.css")
+    def admin_css() -> FileResponse:
+        return FileResponse(WEB_DIR / "admin.css", media_type="text/css; charset=utf-8")
+
+    @app.get("/admin.js")
+    def admin_js() -> FileResponse:
+        return FileResponse(WEB_DIR / "admin.js", media_type="application/javascript; charset=utf-8")
+
     @app.get("/manifest.webmanifest")
     def manifest() -> FileResponse:
         return FileResponse(WEB_DIR / "manifest.webmanifest", media_type="application/manifest+json")
@@ -324,7 +342,8 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         return {"ok": True, "version": __version__, "ts": int(time.time() * 1000)}
 
     @app.get("/api/items/{item_id}/text")
-    def item_text(item_id: int) -> dict:
+    def item_text(item_id: int, request: Request) -> dict:
+        _need(request, "viewer")
         row = crawler.conn.execute(
             "SELECT title, body_text, body_bytes, url FROM items WHERE id = ?",
             (item_id,),
@@ -377,6 +396,7 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
 
     @app.post("/api/items/{item_id}/read")
     def item_read(item_id: int, request: Request, read: bool = True) -> dict:
+        _need(request, "viewer")
         if crawler.conn.execute("SELECT 1 FROM items WHERE id = ?", (item_id,)).fetchone() is None:
             raise HTTPException(status_code=404, detail="没有这条")
         board.mark_read(crawler.conn, item_id, read, user_id=_uid(request))
@@ -384,6 +404,7 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
 
     @app.post("/api/items/{item_id}/star")
     def item_star(item_id: int, request: Request) -> dict:
+        _need(request, "viewer")
         if crawler.conn.execute("SELECT 1 FROM items WHERE id = ?", (item_id,)).fetchone() is None:
             raise HTTPException(status_code=404, detail="没有这条")
         starred = board.toggle_star(crawler.conn, item_id, user_id=_uid(request))
@@ -408,8 +429,9 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         return crawler.snapshot()
 
     @app.post("/api/crawl")
-    def crawl(source: str | None = None) -> JSONResponse:
+    def crawl(request: Request, source: str | None = None) -> JSONResponse:
         """手动触发一轮。放到后台线程里跑，HTTP 立刻返回，避免前端等几十秒。"""
+        _need(request, "analyst", "admin")
         if not app.state.crawl_lock.acquire(blocking=False):
             return JSONResponse({"started": False, "reason": "上一轮还没跑完"}, status_code=409)
         try:
@@ -442,11 +464,28 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
             return header[7:].strip()
         return request.cookies.get("sw_token", "")
 
+    def _check_csrf(request: Request) -> None:
+        """Cookie 认证的写请求必须带双提交 CSRF 头；Bearer 客户端不受浏览器 CSRF 影响。"""
+        if request.method in ("GET", "HEAD", "OPTIONS", "TRACE"):
+            return
+        authorization = request.headers.get("authorization") or ""
+        if authorization.lower().startswith("bearer "):
+            return
+        expected = request.cookies.get("sw_csrf", "")
+        supplied = request.headers.get("x-csrf-token", "")
+        if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+            raise HTTPException(status_code=403, detail="缺少或错误的 CSRF 令牌")
+
     def _user(request: Request) -> dict:
         try:
-            return auth.user_from_token(crawler.conn, _token(request))
+            user = auth.user_from_token(crawler.conn, _token(request))
         except auth.AuthError as exc:
             raise HTTPException(status_code=exc.status, detail=str(exc))
+        allowed_during_password_change = ("/api/auth/me", "/api/auth/password", "/api/auth/logout")
+        if user.get("must_change_password") and request.url.path not in allowed_during_password_change:
+            raise HTTPException(status_code=403, detail="首次登录必须先修改默认口令")
+        _check_csrf(request)
+        return user
 
     def _uid(request: Request) -> int:
         """登录了就用 user_id，没登录按 0（匿名）。标记按人存，互不影响。"""
@@ -493,14 +532,21 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
             raise HTTPException(status_code=exc.status, detail=str(exc))
         _login_fails(ip).clear()
         audit.log(crawler.conn, body.username, "auth.login", "", "登录成功")
-        resp = JSONResponse({"token": result["token"], "user": result["user"]})
-        resp.set_cookie("sw_token", result["token"], httponly=True, samesite="lax", max_age=TOKEN_COOKIE_TTL)
+        csrf = secrets.token_urlsafe(32)
+        secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+        resp = JSONResponse({"token": result["token"], "user": result["user"], "csrf_token": csrf})
+        resp.set_cookie("sw_token", result["token"], httponly=True, samesite="lax",
+                        secure=secure, max_age=TOKEN_COOKIE_TTL, path="/")
+        resp.set_cookie("sw_csrf", csrf, httponly=False, samesite="lax",
+                        secure=secure, max_age=TOKEN_COOKIE_TTL, path="/")
         return resp
 
     @app.post("/api/auth/logout")
     def auth_logout(request: Request) -> dict:
+        _check_csrf(request)
         resp = JSONResponse({"ok": True})
-        resp.delete_cookie("sw_token")
+        resp.delete_cookie("sw_token", path="/")
+        resp.delete_cookie("sw_csrf", path="/")
         return resp
 
     @app.get("/api/auth/me")
@@ -592,12 +638,20 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
     @app.get("/api/admin/items")
     def admin_items(request: Request, q: str = "", source: str = "", state: str = "",
                     category: str = "", page: int = Query(1, ge=1),
-                    size: int = Query(50, ge=1, le=200)) -> dict:
+                    size: int = Query(50, ge=1, le=200),
+                    before_pub: int = Query(0, ge=0), before_id: int = Query(0, ge=0)) -> dict:
+        """列表。深页用 `before_pub` + `before_id`（键集游标），比 page=3000 快 4 个数量级。"""
         _need(request)
+        cursor = (before_pub, before_id) if before_pub and before_id else None
         rows, total = admin.item_page(crawler.conn, q=q, source=source, state=state,
-                                      category=category, offset=(page - 1) * size, limit=size)
-        return {"items": rows, "total": total, "page": page, "size": size,
+                                      category=category, offset=(page - 1) * size, limit=size,
+                                      before=cursor)
+        body = {"items": rows, "total": total, "page": page, "size": size,
                 "pages": max(1, (total + size - 1) // size)}
+        if rows:
+            body["next_cursor"] = {"before_pub": rows[-1]["published_at"],
+                                   "before_id": rows[-1]["id"]}
+        return body
 
     @app.patch("/api/admin/items/{item_id}")
     def admin_item_edit(item_id: int, body: ItemEdit, request: Request) -> dict:
@@ -741,12 +795,15 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
     @app.post("/api/admin/jobs/{job_id}/{act}")
     def admin_jobs_act(job_id: int, act: str, request: Request) -> dict:
         actor = _need(request, "analyst", "admin")
-        if act == "retry":
-            admin.retry_job(crawler.conn, job_id)
-        elif act == "cancel":
-            admin.cancel_job(crawler.conn, job_id)
-        else:
+        actions = {"retry": admin.retry_job, "cancel": admin.cancel_job,
+                   "pause": admin.pause_job, "resume": admin.resume_job}
+        fn = actions.get(act)
+        if fn is None:
             raise HTTPException(status_code=400, detail=f"不认识的动作：{act}")
+        try:
+            fn(crawler.conn, job_id)
+        except admin.JobStateError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
         audit.log(crawler.conn, actor["username"], f"job.{act}", f"#{job_id}", "")
         return {"ok": True, "counts": admin.job_counts(crawler.conn)}
 

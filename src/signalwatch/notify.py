@@ -240,9 +240,13 @@ def pump(conn: sqlite3.Connection, rows: list[dict], *, now: int | None = None,
             subject, body = compose_digest(picked)
             send(conn, subject, body, to=address)
             sent.append(address)
-        except Exception:
-            # 一个人发不出去不该拖累别人；错误交给上层记审计
-            raise
+        except Exception as exc:
+            # 一个人发不出去不该拖累别人；失败单独留审计，继续后续收件人。
+            from . import audit
+
+            audit.log(conn, "system", "notify.recipient_failed", address,
+                      f"{type(exc).__name__}: {exc}")
+            continue
     if sent:
         _touch(conn, at)
     return sent

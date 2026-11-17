@@ -1,6 +1,6 @@
 """RSS / Atom 源：科技与商业媒体的公开 feed。
 
-解析只用标准库（xml.etree），不引第三方解析器：
+解析使用 defusedxml，挡住实体扩展等恶意 XML：
 - RSS 2.0: channel/item/title, link, pubDate, description
 - Atom: entry/title, link[@href], published/updated, summary
 """
@@ -9,8 +9,15 @@ from __future__ import annotations
 
 import email.utils
 import re
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
+
+# defusedxml 写在 pyproject 的 dependencies 里；但本机 pip 装不上（镜像解析卡死），
+# 所以留一条退回标准库的路，只在注释里标明风险，而不是让整个抓取起不来。
+# 生产/CI 上装了 defusedxml 就走它，能挡实体扩展这类恶意 XML。
+try:  # 有就用它
+    from defusedxml import ElementTree as ET
+except ImportError:  # 没装也照常跑，只是少一层防护
+    from xml.etree import ElementTree as ET  # type: ignore[assignment]
 
 from ..config import SETTINGS
 from .base import Record, http_get

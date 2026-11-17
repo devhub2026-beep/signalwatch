@@ -13,8 +13,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from signalwatch import auth  # noqa: E402
 from signalwatch.api import create_app  # noqa: E402
 from signalwatch.config import Settings  # noqa: E402
+from signalwatch.db import connect  # noqa: E402
 
 
 class AdminApiTests(unittest.TestCase):
@@ -25,6 +27,9 @@ class AdminApiTests(unittest.TestCase):
         self.app = create_app(self.settings, autostart=False)
         self.client = TestClient(self.app)
         self.client.__enter__()
+        conn = connect(self.settings.db_path)
+        auth.set_password(conn, "admin", "test-admin-pass")
+        conn.close()
 
     def tearDown(self):
         try:
@@ -32,7 +37,7 @@ class AdminApiTests(unittest.TestCase):
         finally:
             self.tmp.cleanup()
 
-    def login(self, username="admin", password="admin123"):
+    def login(self, username="admin", password="test-admin-pass"):
         r = self.client.post("/api/auth/login", json={"username": username, "password": password})
         self.assertEqual(r.status_code, 200, r.text)
         return r.json()["token"]
@@ -73,7 +78,7 @@ class AdminApiTests(unittest.TestCase):
         self.assertEqual(r.status_code, 403)
 
     def test_login_sets_cookie(self):
-        r = self.client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
+        r = self.client.post("/api/auth/login", json={"username": "admin", "password": "test-admin-pass"})
         self.assertIn("sw_token", r.cookies)
         r2 = self.client.get("/api/auth/me")
         self.assertEqual(r2.status_code, 200)

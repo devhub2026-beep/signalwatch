@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Protocol
@@ -70,21 +71,57 @@ class FetchOutcome:
     error: str | None = None
 
 
-def http_get(url: str, *, timeout: float, user_agent: str, headers: dict[str, str] | None = None) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": user_agent, **(headers or {})})
+MAX_RESPONSE_BYTES = 12 * 1024 * 1024
+
+
+def _validate_http_url(url: str) -> None:
+    """抓取只允许 HTTP(S)，把 file:/ftp: 等协议挡在网络层之外。"""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme.lower() not in ("http", "https") or not parts.hostname:
+        raise ValueError("数据源地址只支持 http/https")
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_http_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def read_http(req: urllib.request.Request, *, timeout: float,
+              max_bytes: int = MAX_RESPONSE_BYTES) -> bytes:
+    """打开受限的 HTTP 请求，并且最多读 max_bytes，避免异常响应撑爆内存。"""
+    _validate_http_url(req.full_url)
+    if max_bytes < 1:
+        raise ValueError("响应大小上限必须大于 0")
+    opener = urllib.request.build_opener(_SafeRedirectHandler)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read().decode("utf-8", errors="replace")
+        with opener.open(req, timeout=timeout) as resp:
+            data = resp.read(max_bytes + 1)
     except urllib.error.HTTPError as exc:
+        if 300 <= exc.code < 400:
+            exc.close()
+            raise ValueError("重定向目标只支持 http/https") from exc
         if exc.code >= 500 or exc.code == 429:
+            exc.close()
             raise RetryableError(f"HTTP {exc.code}") from exc
+        exc.close()
         raise
     except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
         raise RetryableError(str(exc)) from exc
+    if len(data) > max_bytes:
+        raise ValueError(f"响应超过 {max_bytes} 字节上限")
+    return data
+
+
+def http_get(url: str, *, timeout: float, user_agent: str, headers: dict[str, str] | None = None,
+             max_bytes: int = MAX_RESPONSE_BYTES) -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": user_agent, **(headers or {})})
+    return read_http(req, timeout=timeout, max_bytes=max_bytes).decode("utf-8", errors="replace")
 
 
 def http_post_form(
-    url: str, data: dict[str, Any], *, timeout: float, user_agent: str
+    url: str, data: dict[str, Any], *, timeout: float, user_agent: str,
+    max_bytes: int = MAX_RESPONSE_BYTES,
 ) -> str:
     body = urllib.parse.urlencode(data).encode()
     req = urllib.request.Request(
@@ -96,15 +133,7 @@ def http_post_form(
             "Accept": "application/json, text/plain, */*",
         },
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        if exc.code >= 500 or exc.code == 429:
-            raise RetryableError(f"HTTP {exc.code}") from exc
-        raise
-    except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
-        raise RetryableError(str(exc)) from exc
+    return read_http(req, timeout=timeout, max_bytes=max_bytes).decode("utf-8", errors="replace")
 
 
 def fetch_with_retry(

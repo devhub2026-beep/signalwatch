@@ -12,6 +12,7 @@ license = { text = "MIT" }
 dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.23",
+    "defusedxml>=0.7.1",
 ]
 
 [project.scripts]
@@ -24,5 +25,5 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-signalwatch = ["web/*.html", "web/*.webmanifest", "web/*.js", "web/*.png"]
+signalwatch = ["web/*.html", "web/*.webmanifest", "web/*.js", "web/*.css", "web/*.png"]
 

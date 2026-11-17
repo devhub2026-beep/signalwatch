@@ -36,7 +36,7 @@ class ArxivSource:
             timeout=SETTINGS.http_timeout,
             user_agent=SETTINGS.user_agent,
         )
-        import xml.etree.ElementTree as ET
+        from defusedxml import ElementTree as ET
 
         root = ET.fromstring(raw)
         out: list[Record] = []

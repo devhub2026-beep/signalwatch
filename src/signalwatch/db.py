@@ -15,7 +15,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 # 一条 sqlite 连接不能被多个线程同时用（游标会互相踩，报 "not an error" / "another row available"）。
 # 这里给每条连接配一把锁，所有读写都先拿锁 —— 并发安全靠这一处，而不是靠调用方自觉。
@@ -88,6 +88,10 @@ DDL = [
     "CREATE INDEX IF NOT EXISTS idx_items_published ON items(published_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_items_source ON items(source, published_at DESC)",
     "CREATE INDEX IF NOT EXISTS idx_items_sec ON items(sec_code)",
+    "CREATE INDEX IF NOT EXISTS idx_items_first_seen ON items(first_seen_at DESC)",
+    "CREATE INDEX IF NOT EXISTS idx_items_pub_id ON items(published_at DESC, id DESC)",
+    # 列表按「置顶优先、再按时间倒序」排，索引必须照这个顺序建，否则 ORDER BY 退化成临时排序
+    "CREATE INDEX IF NOT EXISTS idx_items_pin_pub ON items(pinned DESC, published_at DESC, id DESC)",
     """
     CREATE TABLE IF NOT EXISTS revisions (
         id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -147,7 +151,8 @@ DDL = [
         enabled       INTEGER NOT NULL DEFAULT 1,
         created_at    INTEGER NOT NULL,
         last_login_at INTEGER NOT NULL DEFAULT 0,
-        token_version INTEGER NOT NULL DEFAULT 0
+        token_version INTEGER NOT NULL DEFAULT 0,
+        must_change_password INTEGER NOT NULL DEFAULT 0
     )
     """,
     """
@@ -184,6 +189,8 @@ DDL = [
         PRIMARY KEY (item_id, category_id)
     )
     """,
+    # 分类报表按 category_id 反查条目（必须放在建表之后）
+    "CREATE INDEX IF NOT EXISTS idx_item_cat_cat ON item_cat(category_id, item_id)",
     """
     CREATE TABLE IF NOT EXISTS jobs (
         id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -270,7 +277,8 @@ def _migrate(conn) -> None:
         "rules": {"source": "TEXT NOT NULL DEFAULT ''",
                   "user_id": "INTEGER NOT NULL DEFAULT 0"},
         "users": {"email": "TEXT NOT NULL DEFAULT ''",
-                  "display_name": "TEXT NOT NULL DEFAULT ''"},
+                  "display_name": "TEXT NOT NULL DEFAULT ''",
+                  "must_change_password": "INTEGER NOT NULL DEFAULT 0"},
     }
     for table, cols in wanted.items():
         have = _columns(conn, table)

@@ -13,6 +13,7 @@ import time
 import urllib.request
 
 from . import db, pdftext
+from .sources.base import read_http
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 MAX_BYTES = 12 * 1024 * 1024
@@ -20,11 +21,7 @@ MAX_BYTES = 12 * 1024 * 1024
 
 def fetch(url: str, timeout: float = 30.0) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = resp.read(MAX_BYTES + 1)
-    if len(data) > MAX_BYTES:
-        raise ValueError(f"文件超过 {MAX_BYTES // 1024 // 1024} MB，跳过")
-    return data
+    return read_http(req, timeout=timeout, max_bytes=MAX_BYTES)
 
 
 def text_of(pdf: bytes, limit: int = 6000) -> str:

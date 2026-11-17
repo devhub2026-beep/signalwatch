@@ -109,7 +109,8 @@ class WebMarkApiTests(unittest.TestCase):
 
     def _client(self, username: str) -> TestClient:
         client = TestClient(self.app)
-        client.post("/api/auth/login", json={"username": username, "password": "pw123456"})
+        res = client.post("/api/auth/login", json={"username": username, "password": "pw123456"})
+        client.headers["X-CSRF-Token"] = res.json()["csrf_token"]
         return client
 
     def test_read_flag_follows_the_logged_in_user(self) -> None:
@@ -136,8 +137,15 @@ class WebMarkApiTests(unittest.TestCase):
         self.assertTrue(star["starred"])
         self.assertFalse({r["id"]: r for r in bob.get("/api/items").json()["items"]}[item]["starred"])
 
-    def test_mark_on_missing_item_is_404(self) -> None:
+    def test_mark_requires_login_before_item_lookup(self) -> None:
         client = TestClient(self.app)
+        self.assertEqual(client.post("/api/items/999999/read").status_code, 401)
+        from signalwatch import auth
+
+        conn = connect(self.settings.db_path)
+        auth.create_user(conn, "alice", "pw123456", "viewer")
+        conn.close()
+        client = self._client("alice")
         self.assertEqual(client.post("/api/items/999999/read").status_code, 404)
 
 
