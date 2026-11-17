@@ -75,7 +75,7 @@
 | 首轮全量抓取 | **约 5 秒**，入库 **100 条**（早期四源）；加两个政府源后又入库 46 条 |
 | 第二轮（同样 5 秒） | 新增 **0** 条 —— 去重生效 |
 | 数据库 | 156 KB → 加源后约 **200 KB**（SQLite，WAL） |
-| 单元测试 | **138 个，18.5 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / 桌面 11 页渲染） |
+| 单元测试 | **145 个，23 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / PWA 安装条件 / 桌面 11 页渲染） |
 | PDF 正文 | 巨潮公告 **有文字层**：实测 3 条共抠出 **14353 字**，网页上点「看正文」直接读全文（`pdftext.py`，纯标准库，靠 ToUnicode 还原汉字子集字体） |
 | 跨源去重 | 标题归一后 Jaccard ≥ 0.82、72 小时内、跨源才判重；早的那条留、晚的标 `dup_of` |
 | 备份 | `python run.py backup --keep 3` → `data/backups/backup-20261116-181845.db`（1068 KB）；启动时距上次超 20 小时自动备一次 |
@@ -223,12 +223,24 @@ python run.py serve --host 0.0.0.0 --port 8443 --tls
 实测（本机，2026-11-17）：经 nginx 前置 `https://127.0.0.1:8443/api/health` 与 `https://10.128.8.114:8443/api/health` 都返回 `{"ok":true,"version":"0.2.0"}`；`manifest.webmanifest` 200 `application/manifest+json`；`sw.js` 200；SSE `GET /api/events/stats` 经前置也能持续推 `data: {"items": 1695, ...}`（`proxy_buffering off`）。
 
 手机上的步骤：
-1. 手机和电脑连同一个 Wi-Fi，浏览器开 `https://<电脑局域网IP>:8443`；
+1. 手机和电脑连同一个 Wi-Fi，浏览器开 `https://<电脑局域网IP>:8443`（图标已备好：`icon-192.png`、`icon-512.png`、`apple-touch-icon.png`，`manifest` 里 192/512 与 maskable 都声明了）；
 2. 证书是自签的，会提示「不安全」→ 选「继续访问」；
 3. Chrome/Safari 菜单里「添加到主屏幕 / 安装应用」——这时才真的能装。
 
 自签证书换机器/换 IP 要重新生成（`make_cert.ps1` 会自动把本机所有非虚拟网卡的 IPv4 写进 SAN）。想彻底没有警告，得用受信任的证书（内网 CA 或域名 + Let's Encrypt）。
 
+
+### 同一份数据，只能有一个写者
+
+`data/signalwatch.db` 是单文件 SQLite。下面三种用法**互斥**，同时开会烂库：
+
+| 用法 | 起法 | 写者 |
+| --- | --- | --- |
+| 容器（推荐，开机自启） | `docker compose --profile tls up -d` | 只有 `signalwatch` 容器 |
+| 桌面窗口 | `python run.py desktop` | 本机进程 |
+| 本机网页 | `python run.py serve --tls` | 本机进程 |
+
+要用桌面窗口，先 `docker compose down`；反过来也一样。这不是保守，是 2026-11-17 真撞出来的事故（下面这段）。
 
 ### 一次真实事故：容器里用 WAL 会把库写烂
 
@@ -280,7 +292,7 @@ src/signalwatch/
   desktop.py     tkinter 十二页常驻窗口 + 浮窗提醒
   sources/       cninfo / rss / arxiv / html_list（统计局、政府采购）
   web/           index.html（时间线）、admin.html（管理台）、manifest、sw.js
-tests/           138 个用例（去重、并发、源解析、路由、权限、审计、报表、任务队列、邮件推送、配置隔离、PDF 抠字、备份恢复、跨源去重、Excel、桌面渲染）
+tests/           145 个用例（去重、并发、源解析、路由、权限、审计、报表、任务队列、邮件推送、配置隔离、PDF 抠字、备份恢复、跨源去重、Excel、PWA、桌面渲染）
 docs/            验收截图
 ```
 

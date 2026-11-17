@@ -201,6 +201,18 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
     def service_worker() -> FileResponse:
         return FileResponse(WEB_DIR / "sw.js", media_type="application/javascript")
 
+    @app.get("/icon-192.png")
+    def icon192() -> FileResponse:
+        return FileResponse(WEB_DIR / "icon-192.png", media_type="image/png")
+
+    @app.get("/icon-512.png")
+    def icon512() -> FileResponse:
+        return FileResponse(WEB_DIR / "icon-512.png", media_type="image/png")
+
+    @app.get("/apple-touch-icon.png")
+    def apple_icon() -> FileResponse:
+        return FileResponse(WEB_DIR / "apple-touch-icon.png", media_type="image/png")
+
     # ---- API -----------------------------------------------------------------
     @app.get("/api/health")
     def health() -> dict:

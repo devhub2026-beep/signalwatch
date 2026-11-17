@@ -31,6 +31,7 @@ Copy-Item (Join-Path $root "make_cert.ps1") -Destination $out
 Copy-Item (Join-Path $root "install_autostart.ps1") -Destination $out
 Copy-Item (Join-Path $root "start_docker.ps1") -Destination $out
 Copy-Item (Join-Path $root "docker-compose.yml") -Destination $out
+Copy-Item (Join-Path $root "nginx-tls.conf") -Destination $out
 Copy-Item (Join-Path $root "Dockerfile") -Destination $out
 New-Item -ItemType Directory -Path (Join-Path $out "data") -Force | Out-Null
 
@@ -63,9 +64,10 @@ Set-Content -Path (Join-Path $out "启动网页版.bat") -Value $serveBat -Encod
 $tlsBat = @(
   "@echo off",
   "cd /d ""%~dp0""",
-  "if not exist certs\cert.pem (echo 先在项目里跑 make_cert.ps1 生成证书 & pause & exit /b 1)",
-  "start """" SignalWatch.exe serve --host 0.0.0.0 --tls",
-  "timeout /t 3 >nul",
+  "if not exist certs\cert.pem (echo 先跑 make_cert.ps1 生成证书 & pause & exit /b 1)",
+  "echo 用容器方式起（app + nginx 前置），数据库只由 app 容器写...",
+  "start """" powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""%~dp0start_docker.ps1""",
+  "timeout /t 20 >nul",
   "ipconfig | findstr /i ""IPv4"""
 ) -join "`r`n"
 Set-Content -Path (Join-Path $out "启动手机版(HTTPS).bat") -Value $tlsBat -Encoding utf8
