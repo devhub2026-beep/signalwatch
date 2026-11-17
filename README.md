@@ -142,7 +142,21 @@ powershell -ExecutionPolicy Bypass -File .\install_autostart.ps1 -Mode serve
 - **构建**：`python -m build` 出 wheel，再 `pip install --no-deps dist/*.whl` 验证装得上、`signalwatch/web` 里的静态文件进了包；
 - **容器**：`docker build` + 容器里跑一次 CLI + `docker compose config` 校验。
 
-这台机器没装 docker（WSL 都没装），所以镜像从来没在本地跑过——CI 里那一步是给「有 docker 的环境」验证的。
+本机真跑过（Docker Desktop 29.9.3 + WSL2 后端）：
+
+| 检查项 | 实测 |
+| --- | --- |
+| 镜像 | `signalwatch:0.1.0` **215 MB**（基础 `python:3.11-slim`） |
+| 容器内装依赖 | `pip install .` **14.0 秒**（走清华源；默认 pypi.org 在这台机器会超时） |
+| `docker compose up -d` | 容器 `Up (healthy)`，健康检查 200 |
+| 接口 | `GET /api/health` → `{"ok":true,"version":"0.2.0"}`；`/api/stats` → 1593 条 |
+| 容器内 CLI | `signalwatch stats` / `signalwatch crawl` 都正常，七个源全部 `[ok]`（ccgp 新增 20 条） |
+
+两个坑：`registry-1.docker.io` 在这台机器 **DNS 直接 NXDOMAIN**，基础镜像得从 `m.daocloud.io` 拉再 `docker tag`；pypi.org 超时，所以 `Dockerfile` 加了 `ARG PIP_INDEX_URL`：
+
+```bash
+docker build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple -t signalwatch:0.1.0 .
+```
 
 ## 接口
 
@@ -191,7 +205,7 @@ docker compose up --build      # http://127.0.0.1:8766
 - 只存标题、摘要、链接；**PDF 正文抓到的会存进库**（`items.body_text`，单条最多 6000 字），不落原始 PDF 文件；自动补抓只覆盖首屏那几条，历史条目要自己跑 `run.py enrich`；
 - 桌面端也要登录（可以「以访客身份进入」只读看板），改动都会记审计；
 - 调度是进程内的：窗口和服务都关着就不抓。已经在启动文件夹里配了「登录后后台起 serve」；更硬的兜底（计划任务/`restart: unless-stopped`）要管理员权限或 docker；
-- **docker 没在本机验过**（这台机器没 WSL/docker，装 WSL 要管理员 + 重启），`Dockerfile` 与 `compose.yml` 只在 CI 里构建；
+- docker 本机验过镜像构建与 `compose up`，但**没在多机器/多架构上验**（只有这台 Windows + Docker Desktop）；
 - **手机 PWA 没在真机装过**：`manifest` 与 `sw.js` 都在，但 PWA 安装要求 https 或 localhost，手机走局域网地址（http）装不上；
 - 令牌用自签 HMAC，没有刷新机制，7 天过期就得重登。
 
