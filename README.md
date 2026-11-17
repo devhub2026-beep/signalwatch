@@ -164,30 +164,68 @@ docker build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple 
 
 ## 接口
 
+共 **55 条路由**（`tests/test_docs.py` 会核对：代码里每条路由都必须在下面出现，否则测试失败）。
+
+**页面与 PWA**
+
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/`、`/admin` | 时间线 / 管理台 |
+| GET | `/` | 时间线（手机可装成 App） |
+| GET | `/admin` | 管理台 |
+| GET | `/manifest.webmanifest`、`/sw.js` | PWA 清单与 Service Worker |
+| GET | `/icon-192.png`、`/icon-512.png`、`/apple-touch-icon.png` | 图标 |
+| GET | `/docs`、`/redoc`、`/openapi.json`、`/docs/oauth2-redirect` | FastAPI 自带的交互式接口文档 |
+
+**公开数据**
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
 | GET | `/api/health` | 版本、运行状态 |
-| GET | `/api/items?source=&q=&limit=&since=` | 时间线（支持搜索） |
+| GET | `/api/items?source=&q=&limit=&since=` | 时间线（支持搜索；带上 `read`/`starred` 按当前用户算） |
+| GET | `/api/items/{id}/text` | 某条的 PDF 正文（没抠到就是空串） |
 | GET | `/api/stats`、`/api/sources` | 统计 / 每个源的节奏与失败数 |
+| GET | `/api/events/stats` | SSE，每 3 秒推一次计数（有新条目立刻推） |
 | POST | `/api/crawl` | 立刻抓一轮（正在跑返回 409） |
+| POST | `/api/items/{id}/read`、`/api/items/{id}/star` | 标记已读 / 收藏（**按用户隔离**） |
+
+**登录与用户**
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
 | POST | `/api/auth/login`、`/api/auth/logout` | 登录（同时下发 cookie）、退出 |
 | GET | `/api/auth/me` | 当前用户 |
-| GET/POST | `/api/users` | 用户列表 / 建用户（admin） |
-| PATCH/DELETE | `/api/users/{name}` | 改角色/停用/改口令 / 删除（admin） |
-| GET | `/api/audit` | 审计日志（admin） |
-| GET | `/api/admin/audit.csv` | 导出审计（CSV，带 BOM） |
-| POST | `/api/admin/audit/prune` | 删掉 N 天前的审计 |
-| GET/POST | `/api/admin/notify` | 读/存发件箱配置（口令不回显） |
 | POST | `/api/auth/password` | 自己改口令（改完旧令牌作废） |
+| GET/POST | `/api/users` | 用户列表 / 建用户（admin） |
+| PATCH/DELETE | `/api/users/{name}` | 改角色、停用、改口令、改邮箱 / 删除（admin） |
+| GET | `/api/admin/roles` | 角色清单与权限位 |
+
+**条目（管理）**
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/admin/items?page=&size=&state=&category=&q=` | 分页列表（含已下架） |
+| PATCH | `/api/admin/items/{id}` | 改标题/摘要/分类 |
+| POST | `/api/admin/items/state` | 批量上架/下架 |
+| POST | `/api/admin/items/delete` | 批量删除 |
 | POST | `/api/admin/items/{id}/pin` | 置顶/取消置顶 |
 | GET | `/api/admin/items/{id}/history` | 改动历史 + 相邻版本差异 |
 | GET | `/api/admin/timeline?code=` | 某公司的时间线 |
-| GET | `/api/report?days=7` | 报表：按天、按源、按分类、最活跃公司 |
-| GET | `/api/items/{id}/text` | 某条的 PDF 正文（没抠到就是空串） |
+| GET | `/api/admin/items.csv`、`/api/admin/items.xlsx` | 导出（CSV 带 BOM 且做了公式注入转义；xlsx 纯标准库生成） |
+
+**分类 / 任务 / 报表 / 设置 / 审计**
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET/POST | `/api/admin/categories` | 分类列表 / 新增 |
+| PATCH | `/api/admin/categories/{id}` | 改名、停用、排序 |
+| GET/POST | `/api/admin/jobs` | 任务队列 / 投递任务 |
+| POST | `/api/admin/jobs/{id}/{act}` | `retry` 重试、`cancel` 取消 |
+| GET | `/api/report?days=7`、`/api/report.xlsx?days=` | 报表（按天/源/分类/公司） |
+| GET/PATCH | `/api/admin/settings` | 开关与参数 |
+| GET/POST | `/api/admin/notify` | 读/存发件箱配置（口令不回显，可带 `send_test` 发测试信） |
+| GET | `/api/audit`、`/api/admin/audit.csv` | 审计日志 / 导出 |
+| POST | `/api/admin/audit/prune` | 删掉 N 天前的审计 |
 | POST | `/api/admin/enrich?limit=&source=` | 现抠几条正文（analyst+） |
-| GET | `/api/admin/items.xlsx`、`/api/report.xlsx?days=` | Excel 导出（纯标准库生成，openpyxl 能读） |
-| GET | `/api/events/stats` | SSE，每 3 秒推一次计数（有新条目立刻推） |
 | PATCH | `/api/sources/{name}` | 改间隔、暂停/恢复（analyst+） |
 
 ## 加一个源
