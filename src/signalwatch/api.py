@@ -86,6 +86,16 @@ class JobIn(BaseModel):
     priority: int = 0
 
 
+class RuleIn(BaseModel):
+    keyword: str
+    category: str = ""
+    source: str = ""
+
+
+class RulePatch(BaseModel):
+    enabled: bool
+
+
 class SettingsIn(BaseModel):
     values: dict[str, str]
 
@@ -540,6 +550,39 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         return {"roles": [{"name": name, "rank": v["rank"], "builtin": v["builtin"],
                            "perms": sorted(auth.perms_of(crawler.conn, name))}
                           for name, v in sorted(table.items(), key=lambda kv: -kv[1]["rank"])]}
+
+    @app.get("/api/admin/rules")
+    def list_rules(request: Request) -> dict:
+        user = _user(request)
+        rows = board.list_rules(crawler.conn,
+                                None if user["role"] == "admin" else int(user["id"]))
+        return {"rules": rows}
+
+    @app.post("/api/admin/rules")
+    def create_rule(payload: RuleIn, request: Request) -> dict:
+        user = _need(request, "analyst")
+        try:
+            ok = board.add_rule(crawler.conn, payload.keyword, payload.category, payload.source,
+                                int(user["id"]))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        audit.log(crawler.conn, user["username"], "rule.add", payload.keyword)
+        return {"ok": ok, "duplicated": not ok}
+
+    @app.patch("/api/admin/rules/{rule_id}")
+    def patch_rule(rule_id: int, payload: RulePatch, request: Request) -> dict:
+        user = _need(request, "analyst")
+        board.set_rule_enabled(crawler.conn, rule_id, payload.enabled)
+        audit.log(crawler.conn, user["username"],
+                  "rule.enable" if payload.enabled else "rule.disable", str(rule_id))
+        return {"ok": True}
+
+    @app.delete("/api/admin/rules/{rule_id}")
+    def remove_rule(rule_id: int, request: Request) -> dict:
+        user = _need(request, "analyst")
+        board.delete_rule(crawler.conn, rule_id)
+        audit.log(crawler.conn, user["username"], "rule.delete", str(rule_id))
+        return {"ok": True}
 
     @app.get("/api/admin/categories")
     def admin_categories(request: Request) -> dict:

@@ -247,3 +247,58 @@ class MailAndAuditTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RuleApiTests(unittest.TestCase):
+    """订阅词接口：增、列、停用、删，以及权限边界。"""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.settings = Settings(home=Path(self.tmp.name), min_interval=0.0)
+        self.app = create_app(self.settings, autostart=False)
+        self.client = TestClient(self.app)
+        self.client.__enter__()
+
+    def tearDown(self) -> None:
+        try:
+            self.client.__exit__(None, None, None)
+        finally:
+            self.tmp.cleanup()
+
+    def _login(self, username="admin", password="admin123") -> None:
+        r = self.client.post("/api/auth/login", json={"username": username, "password": password})
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_anonymous_cannot_list(self) -> None:
+        self.assertEqual(TestClient(self.app).get("/api/admin/rules").status_code, 401)
+
+    def test_add_list_toggle_delete(self) -> None:
+        self._login()
+        r = self.client.post("/api/admin/rules", json={"keyword": "中标", "category": "政策"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertTrue(r.json()["ok"])
+        rows = self.client.get("/api/admin/rules").json()["rules"]
+        self.assertEqual([x["keyword"] for x in rows], ["中标"])
+        rid = rows[0]["id"]
+        self.assertEqual(self.client.patch(f"/api/admin/rules/{rid}", json={"enabled": False}).status_code, 200)
+        self.assertEqual(self.client.get("/api/admin/rules").json()["rules"][0]["enabled"], 0)
+        self.assertEqual(self.client.delete(f"/api/admin/rules/{rid}").status_code, 200)
+        self.assertEqual(self.client.get("/api/admin/rules").json()["rules"], [])
+
+    def test_duplicate_keyword_is_reported(self) -> None:
+        self._login()
+        self.client.post("/api/admin/rules", json={"keyword": "回购"})
+        r = self.client.post("/api/admin/rules", json={"keyword": "回购"})
+        self.assertEqual(r.json(), {"ok": False, "duplicated": True})
+
+    def test_empty_keyword_is_400(self) -> None:
+        self._login()
+        self.assertEqual(self.client.post("/api/admin/rules", json={"keyword": "   "}).status_code, 400)
+
+    def test_viewer_cannot_add(self) -> None:
+        self._login()
+        self.client.post("/api/users", json={"username": "v1", "password": "viewer123", "role": "viewer"})
+        vc = TestClient(self.app)
+        vc.__enter__()
+        vc.post("/api/auth/login", json={"username": "v1", "password": "viewer123"})
+        self.assertEqual(vc.post("/api/admin/rules", json={"keyword": "x"}).status_code, 403)

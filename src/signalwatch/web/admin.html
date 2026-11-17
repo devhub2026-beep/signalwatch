@@ -84,8 +84,10 @@
     <div class="tab" data-t="report">报表</div>
     <div class="tab" data-t="users">用户</div>
     <div class="tab" data-t="sources">数据源</div>
+    <div class="tab" data-t="rules">订阅词</div>
     <div class="tab" data-t="settings">设置</div>
     <div class="tab" data-t="audit">审计</div>
+    <div class="tab" data-t="me">我的</div>
   </div>
 
   <div id="t-overview" class="card">
@@ -109,6 +111,42 @@
   <div id="t-sources" class="card hide">
     <h2>数据源</h2>
     <table id="sources"></table>
+  </div>
+
+  <div id="t-rules" class="card hide">
+    <h2>订阅词</h2>
+    <p class="muted">标题里出现这些词的条目会被标黄；只提醒订阅词的开关在「设置」。</p>
+    <div class="row" style="margin-bottom:12px">
+      <input id="r_kw" placeholder="关键词，例如：中标 / 增持 / 回购" style="width:260px">
+      <input id="r_cat" placeholder="分类（可不填）" style="width:150px">
+      <input id="r_src" placeholder="来源（可不填）" style="width:150px">
+      <button id="r_add">添加</button>
+      <span class="err" id="r_err"></span>
+    </div>
+    <table id="rules" class="grid" style="width:100%">
+      <thead><tr><th style="width:70px">ID</th><th>关键词</th><th style="width:110px">分类</th>
+      <th style="width:110px">来源</th><th style="width:80px">状态</th><th style="width:190px">操作</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div id="t-me" class="card hide">
+    <h2>我的</h2>
+    <table class="grid" style="width:100%">
+      <tbody>
+        <tr><th style="width:140px">账号</th><td id="me_name">—</td></tr>
+        <tr><th>角色</th><td id="me_role">—</td></tr>
+        <tr><th>上次登录</th><td id="me_last">—</td></tr>
+        <tr><th>我建的订阅词</th><td id="me_rules">—</td></tr>
+      </tbody>
+    </table>
+    <h2 style="margin-top:22px">改口令</h2>
+    <div class="row">
+      <input id="me_old" type="password" placeholder="原口令" style="width:200px">
+      <input id="me_new" type="password" placeholder="新口令（≥6 位）" style="width:240px">
+      <button id="me_save">保存</button>
+      <span class="err" id="me_err"></span>
+    </div>
   </div>
 
   <div id="t-audit" class="card hide">
@@ -274,10 +312,12 @@ $("mypwd").onclick = async () => {
   } catch (e) { alert(e.message); }
 };
 
-const TABS = ["overview", "items", "categories", "jobs", "report", "users", "sources", "settings", "audit"];
+const TABS = ["overview", "items", "categories", "jobs", "report", "users", "sources",
+              "rules", "settings", "audit", "me"];
 const LOADERS = {
   overview: loadOverview, items: loadItems, categories: loadCategories, jobs: loadJobs,
   report: loadReport, users: loadUsers, sources: loadSources, settings: loadSettings, audit: loadAudit,
+  rules: loadRules, me: loadMe,
 };
 
 document.querySelectorAll(".tab").forEach((el) => {
@@ -399,6 +439,74 @@ async function loadSources() {
     };
   });
 }
+
+async function loadRules() {
+  const r = await api("/api/admin/rules");
+  $("rules").querySelector("tbody").innerHTML = r.rules.map((x) => `<tr>
+    <td class="muted">${x.id}</td><td><b>${esc(x.keyword)}</b></td>
+    <td>${esc(x.category || "不限")}</td><td>${esc(x.source || "不限")}</td>
+    <td>${x.enabled ? '<span class="ok">启用</span>' : '<span class="err">已停用</span>'}</td>
+    <td class="row">
+      <button class="ghost" data-rt="${x.enabled ? "off" : "on"}" data-id="${x.id}">${x.enabled ? "停用" : "启用"}</button>
+      <button class="danger" data-rd="${x.id}">删除</button>
+    </td></tr>`).join("") || '<tr><td colspan="6" class="muted">还没有订阅词</td></tr>';
+  $("rules").querySelectorAll("[data-rt]").forEach((b) => {
+    b.onclick = async () => {
+      await api("/api/admin/rules/" + b.dataset.id, { method: "PATCH", body: JSON.stringify({ enabled: b.dataset.rt === "on" }) });
+      loadRules();
+    };
+  });
+  $("rules").querySelectorAll("[data-rd]").forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm("删除这个订阅词？")) return;
+      await api("/api/admin/rules/" + b.dataset.rd, { method: "DELETE" });
+      loadRules();
+    };
+  });
+}
+
+async function loadMe() {
+  const me = await api("/api/auth/me");
+  const u = me.user || me;
+  $("me_name").textContent = u.username || "—";
+  $("me_role").textContent = ({ admin: "管理员", analyst: "分析员", auditor: "审计员", viewer: "只读" })[u.role] || u.role || "—";
+  $("me_last").textContent = u.last_login_at ? t(u.last_login_at) : "—";
+  try {
+    const r = await api("/api/admin/rules");
+    $("me_rules").textContent = r.rules.length + " 条";
+  } catch (e) {
+    $("me_rules").textContent = "—";
+  }
+}
+
+$("r_add").onclick = async () => {
+  $("r_err").textContent = "";
+  try {
+    await api("/api/admin/rules", {
+      method: "POST",
+      body: JSON.stringify({ keyword: $("r_kw").value.trim(), category: $("r_cat").value.trim(),
+                             source: $("r_src").value.trim() }),
+    });
+    $("r_kw").value = $("r_cat").value = $("r_src").value = "";
+    loadRules();
+  } catch (e) {
+    $("r_err").textContent = e.message;
+  }
+};
+
+$("me_save").onclick = async () => {
+  $("me_err").textContent = "";
+  try {
+    await api("/api/auth/password", { method: "POST",
+      body: JSON.stringify({ old: $("me_old").value, new: $("me_new").value }) });
+    $("me_err").textContent = "";
+    alert("口令已改，请用新口令重新登录");
+    localStorage.removeItem("sw_token");
+    location.reload();
+  } catch (e) {
+    $("me_err").textContent = e.message;
+  }
+};
 
 async function loadAudit() {
   const r = await api("/api/audit?limit=100");
