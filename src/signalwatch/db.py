@@ -249,13 +249,21 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
     conn = sqlite3.connect(str(path), timeout=30.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     journal = (os.environ.get("SIGNALWATCH_JOURNAL") or "wal").strip().lower()
-    if journal in ("delete", "truncate", "persist", "memory", "off"):
-        conn.execute(f"PRAGMA journal_mode={journal.upper()}")
-        conn.execute("PRAGMA synchronous=FULL")
-    else:
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+    want = journal.upper() if journal in ("delete", "truncate", "persist",
+                                          "memory", "off") else "WAL"
     conn.execute("PRAGMA busy_timeout=30000")
+    # 切 journal_mode 需要独占锁：另一个进程正在写时会报 database is locked。
+    # 已经是要的模式就跳过（第二个连接、worker 与 serve 同库时都会走到这里）。
+    try:
+        current = (conn.execute("PRAGMA journal_mode").fetchone() or ["wal"])[0]
+    except sqlite3.Error:                                   # pragma: no cover
+        current = "wal"
+    if str(current).upper() != want:
+        try:
+            conn.execute(f"PRAGMA journal_mode={want}")
+        except sqlite3.OperationalError:
+            pass          # 让 busy_timeout 之外的锁留给调用方：读照样能读
+    conn.execute("PRAGMA synchronous=FULL" if want != "WAL" else "PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 

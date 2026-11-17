@@ -77,7 +77,7 @@
 | 首轮全量抓取 | **约 5 秒**，入库 **100 条**（早期四源）；加两个政府源后又入库 46 条 |
 | 第二轮（同样 5 秒） | 新增 **0** 条 —— 去重生效 |
 | 数据库 | 156 KB → 加源后约 **200 KB**（SQLite，WAL） |
-| 单元测试 | **221 个，85 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / PWA 安装条件 / 桌面 12 页渲染 + 审计页） |
+| 单元测试 | **228 个，85 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / PWA 安装条件 / 桌面 12 页渲染 + 审计页） |
 | 正文抠取 | 两条路：巨潮 PDF 走 `pdftext.py`（纯标准库，ToUnicode 还原汉字子集字体），IT之家/少数派/政采/统计局走 `enrich.html_to_text()`（去掉脚本、导航、面包屑、文末版权）。实测一轮补 30 条：抠到 **25 条 / 77307 字**，空正文 3、下载失败 2 |
 | 跨源去重 | 标题归一后 Jaccard ≥ 0.82、72 小时内、跨源才判重；早的那条留、晚的标 `dup_of` |
 | 备份 | `python run.py backup --keep 3` → `data/backups/backup-20261116-181845.db`（1068 KB）；启动时距上次超 20 小时自动备一次 |
@@ -99,6 +99,8 @@ python run.py serve            # 网页 + API，只监听 127.0.0.1:8766
 python run.py desktop          # 桌面常驻窗口（右下角弹窗）
 python run.py crawl            # 立刻抓一轮
 python run.py stats            # 库里多少条、源健不健康
+python run.py worker                      # 不启界面，只领 jobs 表里的任务去抓
+python run.py worker --once --recover     # 把中断的任务打回队列，干完就退出
 python run.py enrich --limit 5            # 补 5 条正文（默认覆盖 PDF 与网页两类源）
 python run.py enrich --limit 20 --source ithome   # 只补 IT之家
 python run.py backup --keep 7  # 备份（另有 restore / backups）
@@ -364,6 +366,31 @@ cancelled → （终态）
 - 台账表 `schema_migrations(version, name, applied_at)`，由 `db.init_db()` 在迁移跑完后写入（老库第一次会一次性补记 1..N）；
 - **这个命令是只读的**——写库只允许一个写者（容器或桌面窗口），所以它不会为了「修复」台账去动数据；
 - `--check` 在台账缺步骤时退出 1，可以直接放进发布脚本；`--json` 给机器读。
+
+数字都在 [docs/BENCH.md](docs/BENCH.md)（抓取/正文/接口性能/压测/构建），
+事故复盘在 [docs/RCA-wal-corruption.md](docs/RCA-wal-corruption.md)。
+
+## 独立 worker：关掉界面也能干活
+
+任务队列（`jobs` 表）原来只有桌面窗口里那个线程在消费，窗口一关就没人领活。
+`run.py worker` 解决这个：
+
+```bash
+python run.py worker                  # 常驻，一直领任务
+python run.py worker --once --recover # 把上次中断的 running 打回队列，干完就退
+```
+
+- 领任务靠 `claim_job`（查一条 + 立刻置 `running` 在同一把锁里），两个 worker 不会领到同一条；
+- 进程被 kill 时任务停在 `running`，`--recover` 会打回 `queued`，下次继续；
+- 每次执行都写一条 `audit`（`job.run`，带耗时），页面上能查；
+- 默认还会顺带做去重 + 抠 2 条正文 + 补分类，和界面里那个 worker 一致。
+
+**注意单写者**：worker 和 serve/桌面窗口同时写同一个库会抢 SQLite 的锁。
+容器里跑 worker 就用 `docker compose exec signalwatch signalwatch worker`，
+不要宿主机再开一个。
+
+实测（2026-11-17）：网页里排一条 `source:ithome` → 容器内 `signalwatch worker --once`
+领走执行 → 库里 `status=done, result='ithome:ok 抓到 30 新增 1'`，耗时写在 audit 里 **4.36 秒**。
 
 ## 已知限制
 

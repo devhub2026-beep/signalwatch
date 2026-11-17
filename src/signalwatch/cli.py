@@ -42,6 +42,10 @@ def build_parser() -> argparse.ArgumentParser:
     r = sub.add_parser("restore", help="从备份恢复（会先给当前库留一份）")
     r.add_argument("file", help="备份文件路径")
     lb = sub.add_parser("backups", help="列出已有备份")
+    wk = sub.add_parser("worker", help="不起界面，只领 jobs 表里的任务去抓（适合服务器/计划任务）")
+    wk.add_argument("--once", action="store_true", help="把当前排队的干完就退出")
+    wk.add_argument("--idle", type=float, default=2.0, help="没任务时多久看一次（秒）")
+    wk.add_argument("--recover", action="store_true", help="启动时把上次中断的 running 任务打回队列")
     en = sub.add_parser("enrich", help="把公告 PDF / 网页正文抠进库（默认覆盖所有能用的源）")
     en.add_argument("--limit", type=int, default=5)
     en.add_argument("--source", default="", help="只补这个源；留空=全部可补的源")
@@ -116,6 +120,26 @@ def _cmd_backups(args) -> int:
         when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(it["at"] / 1000))
         print(f"{when}  {it['size'] / 1024:8.1f} KB  {it['name']}")
     return 0
+
+
+def _cmd_worker(args) -> int:
+    from . import worker
+    from .scheduler import Crawler
+
+    crawler = Crawler()
+    conn = crawler.conn
+    try:
+        if args.recover:
+            n = worker.recover_stale(conn)
+            print(f"[ok] 把 {n} 条中断的任务打回队列")
+        stop = [False]
+        worker.install_signals(stop)
+        done = worker.loop(conn, crawler, idle=args.idle,
+                           max_jobs=-1 if args.once else None, stop=stop)
+        print(f"[ok] 这次干了 {done} 个任务")
+        return 0
+    finally:
+        conn.close()
 
 
 def _cmd_enrich(args) -> int:
@@ -271,6 +295,8 @@ def main(argv: list[str] | None = None) -> int:
         return _cmd_restore(args)
     if args.cmd == "backups":
         return _cmd_backups(args)
+    if args.cmd == "worker":
+        return _cmd_worker(args)
     if args.cmd == "enrich":
         return _cmd_enrich(args)
     raise SystemExit(f"未知命令：{args.cmd}")
