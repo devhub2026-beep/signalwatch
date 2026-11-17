@@ -38,6 +38,7 @@ def board_query(
     only_starred: bool = False,
     limit: int = 300,
     include_dups: bool = False,
+    user_id: int = 0,
 ) -> list[dict]:
     where = ["1=1"]
     args: list = []
@@ -65,7 +66,7 @@ def board_query(
                i.published_at, i.version, i.kind,
                m.read_at, m.starred_at
         FROM items i
-        LEFT JOIN marks m ON m.item_id = i.id
+        LEFT JOIN marks m ON m.item_id = i.id AND m.user_id = {int(user_id)}
         WHERE {' AND '.join(where)}
         ORDER BY i.published_at DESC, i.id DESC
         LIMIT ?
@@ -95,41 +96,49 @@ def matched_rules(conn, item: dict) -> list[str]:
     return hits
 
 
-def unread_count(conn) -> int:
+def unread_count(conn, user_id: int = 0) -> int:
     with guard(conn):
         return conn.execute(
-            "SELECT COUNT(*) n FROM items i LEFT JOIN marks m ON m.item_id=i.id"
-            " WHERE m.read_at IS NULL"
+            "SELECT COUNT(*) n FROM items i"
+            " LEFT JOIN marks m ON m.item_id = i.id AND m.user_id = ?"
+            " WHERE m.read_at IS NULL",
+            (int(user_id),),
         ).fetchone()["n"]
 
 
-def star_count(conn) -> int:
+def star_count(conn, user_id: int = 0) -> int:
     with guard(conn):
         return conn.execute(
-            "SELECT COUNT(*) n FROM marks WHERE starred_at IS NOT NULL"
+            "SELECT COUNT(*) n FROM marks WHERE user_id = ? AND starred_at IS NOT NULL",
+            (int(user_id),),
         ).fetchone()["n"]
 
 
-def mark_read(conn, item_id: int, read: bool = True) -> None:
+def mark_read(conn, item_id: int, read: bool = True, user_id: int = 0) -> None:
     now = int(time.time() * 1000)
     with guard(conn), conn:
         conn.execute(
-            "INSERT INTO marks(item_id, read_at) VALUES(?,?)"
-            " ON CONFLICT(item_id) DO UPDATE SET read_at=excluded.read_at",
-            (item_id, now if read else None),
+            "INSERT INTO marks(user_id, item_id, read_at) VALUES(?,?,?)"
+            " ON CONFLICT(user_id, item_id) DO UPDATE SET read_at=excluded.read_at",
+            (int(user_id), item_id, now if read else None),
         )
 
 
-def toggle_star(conn, item_id: int) -> bool:
-    """返回切换后的状态：True = 已收藏。"""
+def toggle_star(conn, item_id: int, user_id: int = 0) -> bool:
+    """返回切换后的状态：True = 已收藏。标记按人存，互不影响。"""
     now = int(time.time() * 1000)
+    uid = int(user_id)
     with guard(conn), conn:
-        row = conn.execute("SELECT starred_at FROM marks WHERE item_id=?", (item_id,)).fetchone()
+        row = conn.execute(
+            "SELECT starred_at FROM marks WHERE item_id=? AND user_id=?", (item_id, uid)
+        ).fetchone()
         if row is None:
-            conn.execute("INSERT INTO marks(item_id, starred_at) VALUES(?,?)", (item_id, now))
+            conn.execute(
+                "INSERT INTO marks(user_id, item_id, starred_at) VALUES(?,?,?)", (uid, item_id, now)
+            )
             return True
         new = None if row["starred_at"] else now
-        conn.execute("UPDATE marks SET starred_at=? WHERE item_id=?", (new, item_id))
+        conn.execute("UPDATE marks SET starred_at=? WHERE item_id=? AND user_id=?", (new, item_id, uid))
         return new is not None
 
 
@@ -167,6 +176,14 @@ def delete_rule(conn, rule_id: int) -> None:
     with guard(conn), conn:
         conn.execute("DELETE FROM rules WHERE id=?", (rule_id,))
 
+def csv_safe(value) -> str:
+    """Excel 会把 = + - @ 开头的单元格当公式执行，导出前加个单引号掐掉。"""
+    text = "" if value is None else str(value)
+    if text[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + text
+    return text
+
+
 def export_csv(conn, rows: list[dict]) -> str:
     """把当前筛选结果导成 CSV 文本（带 BOM，Excel 打开不乱码）。"""
     import csv
@@ -176,7 +193,7 @@ def export_csv(conn, rows: list[dict]) -> str:
     w = csv.writer(buf)
     w.writerow(["时间", "分类", "源", "代码", "公司", "标题", "链接", "版本", "命中订阅词"])
     for r in rows:
-        w.writerow([
+        w.writerow([csv_safe(x) for x in [
             time.strftime("%Y-%m-%d %H:%M", time.localtime(r["published_at"] / 1000)),
             r.get("category", ""),
             r.get("source", ""),
@@ -186,10 +203,12 @@ def export_csv(conn, rows: list[dict]) -> str:
             r.get("url", ""),
             r.get("version", 1),
             "、".join(r.get("matched") or []),
-        ])
+        ]])
     return "\ufeff" + buf.getvalue()
 
-def is_starred(conn, item_id: int) -> bool:
-    row = conn.execute("SELECT starred_at FROM marks WHERE item_id = ?", (item_id,)).fetchone()
+def is_starred(conn, item_id: int, user_id: int = 0) -> bool:
+    row = conn.execute(
+        "SELECT starred_at FROM marks WHERE item_id = ? AND user_id = ?", (item_id, int(user_id))
+    ).fetchone()
     return bool(row and row["starred_at"])
 

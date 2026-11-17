@@ -50,11 +50,14 @@ def find_duplicate(conn: sqlite3.Connection, item: dict, *, threshold: float = T
         return None
     since = int(item.get("published_at") or 0) - window_hours * 3600 * 1000
     until = int(item.get("published_at") or 0) + window_hours * 3600 * 1000
+    # 只跟「更早的」比：早的那条是基准，晚的才是重复。不然先入库的会被后到的顶掉。
+    at = int(item.get("published_at") or 0)
     rows = conn.execute(
         "SELECT id, source, title, published_at FROM items"
         " WHERE published_at BETWEEN ? AND ? AND dup_of = 0"
+        " AND (published_at < ? OR (published_at = ? AND id < ?))"
         " ORDER BY published_at DESC LIMIT 400",
-        (since, until),
+        (since, until, at, at, int(item.get("id") or 0)),
     ).fetchall()
     best_id, best_score = None, 0.0
     for row in rows:
@@ -68,36 +71,67 @@ def find_duplicate(conn: sqlite3.Connection, item: dict, *, threshold: float = T
 
 def mark_duplicates(conn: sqlite3.Connection, *, threshold: float = THRESHOLD,
                     limit: int = 500) -> int:
-    """扫最近没被标过的条目，把跨源重复的标上。返回标了几条。"""
+    """增量扫：从上一次扫到的位置往后看，把跨源重复的标上。返回这次标了几条。
+
+    原来按 `published_at ASC` 取头 500 条，数据一涨就永远只扫最老那一批，
+    新入库的条目一条也轮不到 —— 游标改成「上次扫到哪个 id」，才不会漏。
+    """
+    from .admin import get_setting, set_setting
+
+    cursor = int(get_setting(conn, "dedupe.cursor", "0") or 0)
     rows = conn.execute(
-        "SELECT id, source, title, published_at FROM items"
-        " WHERE dup_of = 0 ORDER BY published_at ASC, id ASC LIMIT ?",
-        (int(limit),),
+        "SELECT id, source, title, published_at, dup_of FROM items"
+        " WHERE id > ? ORDER BY id ASC LIMIT ?",
+        (cursor, int(limit)),
     ).fetchall()
+    if not rows:
+        return 0
     marked = 0
-    seen: list[dict] = []
+    last_id = cursor
     for row in rows:
         item = dict(row)
+        last_id = int(item["id"])
+        if int(item["dup_of"] or 0):
+            continue
         norm = normalize(item["title"])
         if len(norm) < 6:
-            seen.append(item)
             continue
-        hit = None
-        for prev in seen:
-            if prev["source"] == item["source"]:
-                continue
-            gap = abs(int(prev["published_at"]) - int(item["published_at"]))
-            if gap > WINDOW_HOURS * 3600 * 1000:
-                continue
-            if similarity(norm, normalize(prev["title"])) >= threshold:
-                hit = prev["id"]
-                break
+        hit = find_duplicate(conn, item, threshold=threshold)
         if hit:
             with conn:
                 conn.execute("UPDATE items SET dup_of = ? WHERE id = ?", (hit, item["id"]))
             marked += 1
-        seen.append(item)
+    set_setting(conn, "dedupe.cursor", str(last_id))
     return marked
+
+
+def recheck_all(conn: sqlite3.Connection, *, threshold: float = THRESHOLD, limit: int = 2000) -> int:
+    """把游标归零重扫一遍（改了阈值或怀疑漏标时用）。"""
+    from .admin import set_setting
+
+    with conn:
+        conn.execute("UPDATE items SET dup_of = 0 WHERE dup_of <> 0")
+    set_setting(conn, "dedupe.cursor", "0")
+    total = 0
+    while True:
+        n = mark_duplicates(conn, threshold=threshold, limit=limit)
+        if n == 0:
+            rows = conn.execute("SELECT COUNT(*) FROM items WHERE id > ?",
+                                (int(get_cursor(conn)),)).fetchone()[0]
+            if rows == 0:
+                break
+        total += n
+        left = conn.execute("SELECT COUNT(*) FROM items WHERE id > ?",
+                            (int(get_cursor(conn)),)).fetchone()[0]
+        if left == 0:
+            break
+    return total
+
+
+def get_cursor(conn: sqlite3.Connection) -> int:
+    from .admin import get_setting
+
+    return int(get_setting(conn, "dedupe.cursor", "0") or 0)
 
 
 def stats(conn: sqlite3.Connection) -> dict:

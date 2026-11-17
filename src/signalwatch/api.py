@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
-from . import __version__, admin, audit, auth, enrich, ingest, maintenance, notify, report, xlsx
+from . import __version__, admin, audit, auth, board, enrich, ingest, maintenance, notify, report, xlsx
 from .config import SETTINGS, Settings
 from .db import db_stats, init_db
 from .scheduler import Crawler
@@ -238,6 +238,7 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
 
     @app.get("/api/items")
     def items(
+        request: Request,
         limit: int = Query(50, ge=1, le=500),
         source: str | None = None,
         kind: str | None = None,
@@ -249,10 +250,39 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
             crawler.conn, limit=limit, source=source, kind=kind, q=q,
             sec_code=sec_code, since_ms=since,
         )
+        uid = _uid(request)
+        marks = {}
+        if rows:
+            ids = [int(r["id"]) for r in rows]
+            marks = {
+                int(m["item_id"]): m
+                for m in crawler.conn.execute(
+                    "SELECT item_id, read_at, starred_at FROM marks"
+                    " WHERE user_id = ? AND item_id IN (" + ",".join("?" * len(ids)) + ")",
+                    (uid, *ids),
+                )
+            }
         for row in rows:
             text = row.pop("body_text", "") or ""
             row["body_chars"] = len(text)
-        return {"count": len(rows), "items": rows}
+            mark = marks.get(int(row["id"]))
+            row["read"] = bool(mark and mark["read_at"])
+            row["starred"] = bool(mark and mark["starred_at"])
+        return {"count": len(rows), "items": rows, "user_id": uid}
+
+    @app.post("/api/items/{item_id}/read")
+    def item_read(item_id: int, request: Request, read: bool = True) -> dict:
+        if crawler.conn.execute("SELECT 1 FROM items WHERE id = ?", (item_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="没有这条")
+        board.mark_read(crawler.conn, item_id, read, user_id=_uid(request))
+        return {"ok": True, "read": bool(read)}
+
+    @app.post("/api/items/{item_id}/star")
+    def item_star(item_id: int, request: Request) -> dict:
+        if crawler.conn.execute("SELECT 1 FROM items WHERE id = ?", (item_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="没有这条")
+        starred = board.toggle_star(crawler.conn, item_id, user_id=_uid(request))
+        return {"ok": True, "starred": starred}
 
     def _cached(key: str, ttl: float, build):
         """5 秒内的重复查询直接吃缓存：时间线页面每 60 秒刷一次，报表页连点也一样。"""
@@ -312,6 +342,13 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
             return auth.user_from_token(crawler.conn, _token(request))
         except auth.AuthError as exc:
             raise HTTPException(status_code=exc.status, detail=str(exc))
+
+    def _uid(request: Request) -> int:
+        """登录了就用 user_id，没登录按 0（匿名）。标记按人存，互不影响。"""
+        try:
+            return int(auth.user_from_token(crawler.conn, _token(request))["id"])
+        except Exception:
+            return 0
 
     def _need(request: Request, *roles: str) -> dict:
         user = _user(request)
@@ -568,7 +605,8 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
 
     @app.get("/api/events/stats")
     def events_stats(request: Request):
-        """SSE：每 3 秒推一次计数，页面不用再定时轮询。"""
+        """SSE：每 3 秒推一次计数，页面不用再定时轮询。未读数按当前登录的人算。"""
+        uid = _uid(request)
 
         def gen():
             conn = crawler.conn
@@ -581,8 +619,9 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
                         "SELECT COUNT(*) FROM items WHERE dup_of = 0 AND first_seen_at >= ?",
                         (midnight,)).fetchone()[0]
                     unread = crawler.conn.execute(
-                        "SELECT COUNT(*) FROM items i LEFT JOIN marks m ON m.item_id = i.id"
-                        " WHERE i.dup_of = 0 AND m.read_at IS NULL").fetchone()[0]
+                        "SELECT COUNT(*) FROM items i LEFT JOIN marks m"
+                        " ON m.item_id = i.id AND m.user_id = ?"
+                        " WHERE i.dup_of = 0 AND m.read_at IS NULL", (uid,)).fetchone()[0]
                     bad = crawler.conn.execute(
                         "SELECT COUNT(*) FROM sources WHERE status <> 'ok'").fetchone()[0]
                     payload = {

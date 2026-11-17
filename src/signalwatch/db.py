@@ -15,7 +15,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 # 一条 sqlite 连接不能被多个线程同时用（游标会互相踩，报 "not an error" / "another row available"）。
 # 这里给每条连接配一把锁，所有读写都先拿锁 —— 并发安全靠这一处，而不是靠调用方自觉。
@@ -117,11 +117,14 @@ DDL = [
     # v2：人用起来才有的两件事 —— 读过没有、盯哪些词
     """
     CREATE TABLE IF NOT EXISTS marks (
-        item_id    INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+        user_id    INTEGER NOT NULL DEFAULT 0,
+        item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
         read_at    INTEGER,
-        starred_at INTEGER
+        starred_at INTEGER,
+        PRIMARY KEY (user_id, item_id)
     )
     """,
+    "CREATE INDEX IF NOT EXISTS idx_marks_item ON marks(item_id)",
     """
     CREATE TABLE IF NOT EXISTS rules (
         id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -274,6 +277,29 @@ def _migrate(conn) -> None:
         for name, decl in cols.items():
             if name not in have:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
+    # v8：标记按人存。老库里的 marks 是「所有人共用一份」，迁移时统一归到 user_id=0，
+    # 登录用户从此各看各的（历史标记不会丢，只是变成匿名那一份）。
+    marks_cols = _columns(conn, "marks")
+    if "user_id" not in marks_cols:
+        conn.execute("ALTER TABLE marks RENAME TO marks_legacy")
+        conn.execute(
+            """
+            CREATE TABLE marks (
+                user_id    INTEGER NOT NULL DEFAULT 0,
+                item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+                read_at    INTEGER,
+                starred_at INTEGER,
+                PRIMARY KEY (user_id, item_id)
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO marks(user_id, item_id, read_at, starred_at)"
+            " SELECT 0, item_id, read_at, starred_at FROM marks_legacy"
+        )
+        conn.execute("DROP TABLE marks_legacy")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_marks_item ON marks(item_id)")
 
     # 老库里的条目缺 v1 历史（早期版本只在被修订时才写 revisions），补一条，
     # 否则「改了什么」永远只能从 v2 比，基线是空的。

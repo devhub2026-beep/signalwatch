@@ -92,9 +92,10 @@ class DeskRow:
     hits: str = ""
 
 
-def rows_from_db(conn, *, q="", category="", only_unread=False, only_starred=False, limit=300):
+def rows_from_db(conn, *, q="", category="", only_unread=False, only_starred=False, limit=300,
+                 user_id=0):
     items = board.board_query(conn, q=q, category=category, only_unread=only_unread,
-                              only_starred=only_starred, limit=limit)
+                              only_starred=only_starred, limit=limit, user_id=user_id)
     return [
         DeskRow(id=int(it["id"]), source=str(it["source"]), title=str(it["title"]),
                 published_at=int(it["published_at"]), url=str(it.get("url") or ""),
@@ -615,7 +616,7 @@ class App:
              bg=SURFACE).pack(side="left")
         Pill(actions, "标为已读", lambda: self._mark_read(row), height=34, padx=12,
              bg=SURFACE).pack(side="left", padx=8)
-        starred = board.is_starred(self.conn, row.id)
+        starred = board.is_starred(self.conn, row.id, user_id=self._uid())
         Pill(actions, "★ 已收藏" if starred else "☆ 收藏", lambda: self._star(row),
              height=34, padx=12, bg=SURFACE, selected=starred).pack(side="left")
 
@@ -716,6 +717,13 @@ class App:
                   "停用" if enabled else "启用")
         self._render_rules()
 
+    def _uid(self) -> int:
+        """标记按人存：登录了就用自己的 id，访客用 0。"""
+        try:
+            return int((self.user or {}).get("id") or 0)
+        except Exception:
+            return 0
+
     def _name(self) -> str:
         return (self.user or {}).get("username", "guest")
 
@@ -768,7 +776,7 @@ class App:
             "SELECT COUNT(*) n FROM items WHERE first_seen_at >= ?",
             (int((time.time() - 86400) * 1000),)).fetchone()
         stats = [("总条目", int(row["n"])), ("今日新增", int(today["n"])),
-                 ("未读", board.unread_count(self.conn)), ("收藏", board.star_count(self.conn))]
+                 ("未读", board.unread_count(self.conn, user_id=self._uid())), ("收藏", board.star_count(self.conn, user_id=self._uid()))]
         for i, (label, value) in enumerate(stats):
             card = tk.Frame(self.stat_box, bg=CARD, highlightbackground=HAIR, highlightthickness=1)
             card.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 12, 0))
@@ -831,7 +839,7 @@ class App:
             (int((time.time() - 86400) * 1000),)).fetchone()["n"])
         revised = int(self.conn.execute("SELECT COUNT(*) n FROM items WHERE version > 1").fetchone()["n"])
         values = [("总条目", total, ACCENT), ("今日新增", today, GREEN),
-                  ("未读", board.unread_count(self.conn), GOLD), ("被修订", revised, WARN)]
+                  ("未读", board.unread_count(self.conn, user_id=self._uid()), GOLD), ("被修订", revised, WARN)]
         for i, (label, value, color) in enumerate(values):
             card = tk.Frame(self.kpi_box, bg=CARD, highlightbackground=HAIR, highlightthickness=1)
             card.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 12, 0))
@@ -1691,14 +1699,14 @@ class App:
     def _open(self, row: DeskRow) -> None:
         if row.url:
             webbrowser.open(row.url)
-            board.mark_read(self.conn, row.id)
+            board.mark_read(self.conn, row.id, user_id=self._uid())
 
     def _mark_read(self, row: DeskRow) -> None:
-        board.mark_read(self.conn, row.id)
+        board.mark_read(self.conn, row.id, user_id=self._uid())
         self._refresh()
 
     def _star(self, row: DeskRow) -> None:
-        board.toggle_star(self.conn, row.id)
+        board.toggle_star(self.conn, row.id, user_id=self._uid())
         self._build_panel()
         self._draw()
 
@@ -1741,7 +1749,7 @@ class App:
 
     def _visible_rows(self) -> list[DeskRow]:
         category = "" if self.category in ("全部", "收藏") else self.category
-        return rows_from_db(self.conn, q=self.query, category=category,
+        return rows_from_db(self.conn, user_id=self._uid(), q=self.query, category=category,
                             only_unread=self.only_unread,
                             only_starred=(self.category == "收藏"), limit=self.limit)
 
@@ -1861,8 +1869,8 @@ class App:
             return
         total = self.conn.execute("SELECT COUNT(*) n FROM items").fetchone()
         self.status.configure(
-            text=f"共 {int(total['n'])} 条   ·   未读 {board.unread_count(self.conn)}   ·   "
-                 f"收藏 {board.star_count(self.conn)}   ·   当前列表 {len(self.rows)} 条   ·   "
+            text=f"共 {int(total['n'])} 条   ·   未读 {board.unread_count(self.conn, user_id=self._uid())}   ·   "
+                 f"收藏 {board.star_count(self.conn, user_id=self._uid())}   ·   当前列表 {len(self.rows)} 条   ·   "
                  f"{SETTINGS.db_path}")
 
     # ================= 轮询 =================
