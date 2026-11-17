@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 import threading
 import time
+import uuid
+from collections import deque
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -119,6 +121,23 @@ class PasswordIn(BaseModel):
     new: str = Field(min_length=6)
 
 
+def _fill_summaries(app: FastAPI) -> int:
+    """没手写 summary 的路由，用函数名转成人话，保证 openapi.json 里不留空标题。"""
+    filled = 0
+    for route in app.routes:
+        if not hasattr(route, "methods"):
+            continue
+        if getattr(route, "summary", None):
+            continue
+        name = getattr(route, "name", "") or ""
+        words = [w for w in name.replace("-", "_").split("_") if w]
+        if not words:
+            continue
+        route.summary = " ".join(w if w.isupper() else w.capitalize() for w in words)[:80]
+        filled += 1
+    return filled
+
+
 def create_app(settings: Settings | None = None, *, autostart: bool = True) -> FastAPI:
     settings = settings or SETTINGS
     crawler = Crawler(settings)
@@ -128,6 +147,73 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
     app.state.settings = settings
     app.state.crawl_lock = threading.Lock()
     app.state.cache = {}
+    app.state.metrics = {
+        "started": time.time(),
+        "total": 0,
+        "by_status": {},
+        "by_path": {},
+        "lat": deque(maxlen=5000),
+    }
+    app.state.login_fails = {}
+    SECURITY_HEADERS = {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "no-referrer",
+        "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+        "Content-Security-Policy": (
+            "default-src 'self'; img-src 'self' data:; "
+            "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+            "connect-src 'self'; frame-ancestors 'none'"
+        ),
+    }
+
+    @app.middleware("http")
+    async def _observe(request: Request, call_next):
+        """给每个请求发一个 request id、记耗时、补安全响应头。"""
+        rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:12]
+        m = app.state.metrics
+        path = request.url.path
+        counted = not path.startswith("/api/events")
+        m["total"] += 1
+        if counted:
+            m["by_path"][path] = m["by_path"].get(path, 0) + 1
+        start = time.perf_counter()
+        response = await call_next(request)
+        cost = (time.perf_counter() - start) * 1000.0
+        code = str(response.status_code)
+        m["by_status"][code] = m["by_status"].get(code, 0) + 1
+        if counted:
+            m["lat"].append(cost)
+        request.state.request_id = rid
+        response.headers["X-Request-ID"] = rid
+        response.headers["X-Response-Time"] = f"{cost:.1f}ms"
+        for key, value in SECURITY_HEADERS.items():
+            response.headers.setdefault(key, value)
+        return response
+
+    @app.get("/api/metrics")
+    def api_metrics() -> dict:
+        """进程内指标：请求数、耗时分布、状态码、最热的路径。"""
+        m = app.state.metrics
+        lat = sorted(m["lat"])
+        def pct(q: float) -> float:
+            if not lat:
+                return 0.0
+            idx = min(len(lat) - 1, int(len(lat) * q / 100))
+            return round(lat[idx], 1)
+        uptime = max(time.time() - m["started"], 1e-9)
+        top = sorted(m["by_path"].items(), key=lambda kv: -kv[1])[:8]
+        return {
+            "uptime_seconds": round(uptime, 1),
+            "requests": m["total"],
+            "rps": round(m["total"] / uptime, 2),
+            "by_status": dict(m["by_status"]),
+            "latency_ms": {
+                "p50": pct(50), "p95": pct(95), "p99": pct(99),
+                "max": round(lat[-1], 1) if lat else 0.0, "samples": len(lat),
+            },
+            "top_paths": [{"path": p, "count": c} for p, c in top],
+        }
 
     @app.exception_handler(HTTPException)
     async def _on_http_error(request: Request, exc: HTTPException):
@@ -372,13 +458,31 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
     def admin_page() -> FileResponse:
         return FileResponse(WEB_DIR / "admin.html", media_type="text/html; charset=utf-8")
 
+    MAX_LOGIN_FAILS = 5
+    LOGIN_WINDOW = 300.0
+
+    def _login_fails(ip: str) -> deque:
+        bucket = app.state.login_fails.get(ip)
+        if bucket is None:
+            bucket = deque(maxlen=64)
+            app.state.login_fails[ip] = bucket
+        now = time.time()
+        while bucket and now - bucket[0] > LOGIN_WINDOW:
+            bucket.popleft()
+        return bucket
+
     @app.post("/api/auth/login")
-    def auth_login(body: LoginIn) -> JSONResponse:
+    def auth_login(body: LoginIn, request: Request) -> JSONResponse:
+        ip = request.client.host if request.client else "unknown"
+        if len(_login_fails(ip)) >= MAX_LOGIN_FAILS:
+            raise HTTPException(status_code=429, detail="失败次数太多，请 5 分钟后再试")
         try:
             result = auth.login(crawler.conn, body.username, body.password)
         except auth.AuthError as exc:
+            _login_fails(ip).append(time.time())
             audit.log(crawler.conn, body.username, "auth.login_failed", "", str(exc))
             raise HTTPException(status_code=exc.status, detail=str(exc))
+        _login_fails(ip).clear()
         audit.log(crawler.conn, body.username, "auth.login", "", "登录成功")
         resp = JSONResponse({"token": result["token"], "user": result["user"]})
         resp.set_cookie("sw_token", result["token"], httponly=True, samesite="lax", max_age=TOKEN_COOKIE_TTL)
@@ -781,6 +885,7 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
                   ", ".join(f"{k}={v}" for k, v in body.values.items()))
         return {"ok": True, "values": body.values}
 
+    _fill_summaries(app)
     return app
 
 

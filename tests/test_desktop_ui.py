@@ -3,11 +3,20 @@
 tkinter 没有官方 headless，但这台机器有桌面会话，Tk 能建窗口（只是不显示）。
 所以这里建一个真 App，切一遍所有页面，再把窗口销毁——比人眼点一遍可靠。
 
-CI/无桌面环境下 Tk 会抛 TclError，这时跳过而不是失败。
+**为什么用子进程跑**：把 tkinter 和别的测试放在同一个进程里时，进程退出阶段
+会报 `Tcl_AsyncDelete: async handler deleted by the wrong thread` 并让整个
+unittest 进程异常退出（Tk 的 async handler 被非创建线程清掉）。这不是断言失败，
+是进程级崩溃，会把后面的用例一起带走。所以真正的 Tk 用例放在
+`SIGNALWATCH_TK_INPROC=1` 的子进程里跑，外层只做调度和结果转发。
+
+无桌面环境（CI）里子进程会因 TclError 跳过，外层也跳过，不会红。
 """
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,8 +29,19 @@ try:
 except Exception:  # pragma: no cover
     tk = None
 
+INPROC = os.environ.get("SIGNALWATCH_TK_INPROC") == "1"
+ROOT = Path(__file__).resolve().parents[1]
+CASES = (
+    "DesktopPagesInproc.test_all_pages_render",
+    "DesktopPagesInproc.test_starred_is_a_home_filter_not_a_page",
+    "DesktopPagesInproc.test_login_screen_accepts_guest",
+)
 
-class DesktopPagesTests(unittest.TestCase):
+
+@unittest.skipIf(not INPROC, "真实 Tk 用例只在子进程里跑（见模块文档）")
+class DesktopPagesInproc(unittest.TestCase):
+    """只在子进程里跑：建真 App、切页面、销毁。"""
+
     def setUp(self) -> None:
         if tk is None:
             self.skipTest("没有 tkinter")
@@ -51,6 +71,7 @@ class DesktopPagesTests(unittest.TestCase):
         app._enter({"username": "admin", "role": "admin"})
 
         def cleanup():
+            app._alive = False
             for conn in (getattr(app, "conn", None), getattr(crawler, "conn", None)):
                 try:
                     if conn is not None:
@@ -90,6 +111,7 @@ class DesktopPagesTests(unittest.TestCase):
         app = App(crawler, paused=True)
 
         def cleanup():
+            app._alive = False
             for conn in (getattr(app, "conn", None), getattr(crawler, "conn", None)):
                 try:
                     if conn is not None:
@@ -105,6 +127,31 @@ class DesktopPagesTests(unittest.TestCase):
         app._enter(None)
         app.root.update_idletasks()
         self.assertEqual(app.user["username"], "访客")
+
+
+@unittest.skipIf(INPROC, "子进程内不调度自己")
+class DesktopPagesTests(unittest.TestCase):
+    """外层调度器：每条用例起一个干净的子进程。"""
+
+    def _run(self, case: str) -> None:
+        env = dict(os.environ, SIGNALWATCH_TK_INPROC="1", PYTHONIOENCODING="utf-8")
+        proc = subprocess.run(
+            [sys.executable, "-m", "unittest", f"tests.test_desktop_ui.{case}"],
+            cwd=str(ROOT), env=env, capture_output=True, text=True, timeout=180,
+        )
+        output = (proc.stdout or "") + (proc.stderr or "")
+        if proc.returncode != 0 and ("没有图形界面" in output or "没有 tkinter" in output):
+            self.skipTest("这个环境没有图形界面")
+        self.assertEqual(proc.returncode, 0, output[-1200:])
+
+    def test_all_pages_render(self) -> None:
+        self._run("DesktopPagesInproc.test_all_pages_render")
+
+    def test_starred_is_a_home_filter_not_a_page(self) -> None:
+        self._run("DesktopPagesInproc.test_starred_is_a_home_filter_not_a_page")
+
+    def test_login_screen_accepts_guest(self) -> None:
+        self._run("DesktopPagesInproc.test_login_screen_accepts_guest")
 
 
 if __name__ == "__main__":

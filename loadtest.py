@@ -1,7 +1,7 @@
-import json, statistics, threading, time, urllib.request
+import json, os, statistics, sys, threading, time, urllib.request
 
-URLS = ["http://127.0.0.1:8766/api/items?limit=50", "http://127.0.0.1:8766/api/stats",
-        "http://127.0.0.1:8766/api/sources"]
+BASE = os.environ.get("SW_BASE", "http://127.0.0.1:8766")
+URLS = [f"{BASE}/api/items?limit=50", f"{BASE}/api/stats", f"{BASE}/api/sources"]
 N_THREADS, PER = 30, 20
 lat = []
 lock = threading.Lock()
