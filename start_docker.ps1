@@ -60,7 +60,32 @@ if (-not (Daemon-Up)) {
 $compose = Join-Path $root "docker-compose.yml"
 if (-not (Test-Path $compose)) { $compose = Join-Path $root "compose.yml" }
 
+# 换网后 IP 会变，证书里的 SAN 不包含当前 IP 时浏览器会报「证书错误」，
+# Chrome 在证书错误的页面上拒绝注册 Service Worker —— PWA 就装不了。
+# 所以每次启动先对一遍：当前 IP 不在证书 SAN 里就重签（CA 复用，手机不用重装证书）。
+$certPath = Join-Path $root "certs\cert.pem"
+$lanIps = @()
+foreach ($line in (ipconfig | Select-String "IPv4")) {
+    if ($line.Line -match "(\d+\.\d+\.\d+\.\d+)") {
+        $ip = $Matches[1]
+        if ($ip -match "^(127\.|169\.254\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)") { continue }
+        if ($lanIps -notcontains $ip) { $lanIps += $ip }
+    }
+}
+if ((Test-Path $certPath) -and $lanIps.Count -gt 0) {
+    $sanText = (& $docker run --rm -v "$root\certs:/certs" python:3.11-slim openssl x509 -in /certs/cert.pem -noout -ext subjectAltName 2>&1) -join " "
+    $missing = @($lanIps | Where-Object { $sanText -notmatch [regex]::Escape($_) })
+    if ($missing.Count -gt 0) {
+        Say "证书里没有当前 IP（$($missing -join ', ')），重签服务器证书（CA 不变）"
+        & (Join-Path $root "tools\make_ca.py") 2>&1 | ForEach-Object { Say ([string]$_) }
+        $reissue = $true
+    }
+}
+
 & $docker compose -f $compose --profile tls up -d 2>&1 | ForEach-Object { Say ([string]$_) }
+if ($reissue) {
+    & $docker compose -f $compose --profile tls up -d --force-recreate proxy 2>&1 | ForEach-Object { Say ([string]$_) }
+}
 if ($LASTEXITCODE -eq 0) {
     # 换网后 IP 会变，这里现算，不写死
     $lanIp = $null
@@ -75,7 +100,7 @@ if ($LASTEXITCODE -eq 0) {
     Say "compose up -d 完成：本机 http://127.0.0.1:8766"
     if ($lanIp) {
         Say "手机访问：https://$lanIp`:8443 （手机需连同一个 Wi-Fi）"
-        Say "换网后如果打不开：先跑 make_cert.ps1 重签证书，再回来跑这个脚本"
+        Say "换网后如果手机打不开：重新跑本脚本即可（它会比对证书 SAN 与当前 IP，不一致就用 tools/make_ca.py 自动重签，CA 不变、手机不用重装）"
     } else {
         Say "手机访问：没检测到局域网 IP，检查网络连接"
     }

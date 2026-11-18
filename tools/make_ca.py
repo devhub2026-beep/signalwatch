@@ -48,6 +48,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="生成本地 CA 与服务器证书")
     ap.add_argument("--days", type=int, default=825, help="服务器证书有效期（iOS 上限 825 天）")
     ap.add_argument("--ca-days", type=int, default=3650)
+    ap.add_argument("--new-ca", action="store_true",
+                    help="强制重建 CA（默认复用已有 certs/ca.key，这样手机只需装一次证书）")
     args = ap.parse_args(argv)
 
     if shutil.which("docker") is None:
@@ -92,11 +94,17 @@ authorityKeyIdentifier = keyid,issuer
     )
 
     # 一个脚本干完：CA → 服务器 key/csr → 用 CA 签 → 自检
+    have_ca = (CERTS / "ca.key").exists() and (CERTS / "ca.crt").exists() and not args.new_ca
+    ca_part = "" if have_ca else f"""
+openssl genrsa -out ca.key 4096 2>/dev/null
+openssl req -x509 -new -nodes -key ca.key -sha256 -days {args.ca_days} -out ca.crt -config openssl-ca.cnf 2>/dev/null
+"""
+    print("[i] 复用已有 CA（手机不用重装证书）" if have_ca else "[i] 新建 CA（手机需要装一次 certs/ca.crt）")
+
     script = f"""
 set -e
 cd /certs
-openssl genrsa -out ca.key 4096 2>/dev/null
-openssl req -x509 -new -nodes -key ca.key -sha256 -days {args.ca_days} -out ca.crt -config openssl-ca.cnf 2>/dev/null
+{ca_part}
 openssl genrsa -out key.pem 2048 2>/dev/null
 openssl req -new -key key.pem -out server.csr -subj "/CN=SignalWatch" -config openssl-ca.cnf 2>/dev/null
 openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \\
@@ -116,7 +124,8 @@ openssl x509 -in cert.pem -noout -text | grep -A1 "Subject Alternative Name"
         print("[x] 生成失败", file=sys.stderr)
         return 1
 
-    (CERTS / "ca.key").unlink(missing_ok=True)   # CA 私钥不进仓库也不留盘
+    # ca.key 保留在 certs/ 里（.gitignore 已排除整个 certs/）：
+    # 删掉它虽然更安全，但换 Wi-Fi/IP 就得重建 CA，手机要重新装一次证书。
     print(f"\n[ok] certs/ca.crt（装到手机上）  certs/cert.pem  certs/key.pem（服务端用）")
     print("     有效期：服务器证书 %d 天，CA %d 天" % (args.days, args.ca_days))
     print("     下一步：docker compose --profile tls up -d --force-recreate proxy")
