@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
-from . import __version__, admin, audit, auth, board, enrich, ingest, maintenance, notify, report, xlsx
+from . import __version__, admin, audit, auth, board, cache, enrich, ingest, maintenance, notify, report, xlsx
 from .config import SETTINGS, Settings
 from .db import db_stats, init_db
 from .scheduler import Crawler
@@ -153,7 +153,7 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
     app.state.crawler = crawler
     app.state.settings = settings
     app.state.crawl_lock = threading.Lock()
-    app.state.cache = {}
+    app.state.cache = cache.TTLCache(maxsize=512)
     app.state.metrics = {
         "started": time.time(),
         "total": 0,
@@ -219,6 +219,7 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
             "requests": m["total"],
             "rps": round(m["total"] / uptime, 2),
             "by_status": dict(m["by_status"]),
+            "cache": app.state.cache.stats(),
             "latency_ms": {
                 "p50": pct(50), "p95": pct(95), "p99": pct(99),
                 "max": round(lat[-1], 1) if lat else 0.0, "samples": len(lat),
@@ -370,6 +371,11 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         sec_code: str | None = None,
         since: int | None = None,
     ) -> dict:
+        cache_key = (f"items:{limit}:{source}:{kind}:{q}:{sec_code}:{since}:"
+                     f"{_uid(request)}")
+        hit = app.state.cache.get(cache_key)
+        if hit is not cache.MISS:
+            return hit
         rows = ingest.query_items(
             crawler.conn, limit=limit, source=source, kind=kind, q=q,
             sec_code=sec_code, since_ms=since,
@@ -392,7 +398,9 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
             mark = marks.get(int(row["id"]))
             row["read"] = bool(mark and mark["read_at"])
             row["starred"] = bool(mark and mark["starred_at"])
-        return {"count": len(rows), "items": rows, "user_id": uid}
+        out = {"count": len(rows), "items": rows, "user_id": uid}
+        app.state.cache.set(cache_key, out)
+        return out
 
     @app.post("/api/items/{item_id}/read")
     def item_read(item_id: int, request: Request, read: bool = True) -> dict:
@@ -410,23 +418,17 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         starred = board.toggle_star(crawler.conn, item_id, user_id=_uid(request))
         return {"ok": True, "starred": starred}
 
-    def _cached(key: str, ttl: float, build):
-        """5 秒内的重复查询直接吃缓存：时间线页面每 60 秒刷一次，报表页连点也一样。"""
-        now = time.time()
-        hit = app.state.cache.get(key)
-        if hit and now - hit[0] < ttl:
-            return hit[1]
-        value = build()
-        app.state.cache[key] = (now, value)
-        return value
+    def _cached(key: str, build):
+        """同一秒内的重复读直接吃缓存（TTL 见 `app.state.cache`）。"""
+        return app.state.cache.get_or_build(key, build)
 
     @app.get("/api/stats")
     def stats() -> dict:
-        return _cached("stats", 5.0, lambda: db_stats(crawler.conn))
+        return _cached("stats", lambda: db_stats(crawler.conn))
 
     @app.get("/api/sources")
     def sources() -> dict:
-        return crawler.snapshot()
+        return _cached("sources", crawler.snapshot)
 
     @app.post("/api/crawl")
     def crawl(request: Request, source: str | None = None) -> JSONResponse:
@@ -622,7 +624,7 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
     @app.get("/api/report")
     def report_overview(request: Request, days: int = Query(7, ge=1, le=90)) -> dict:
         _need(request)
-        return _cached(f"report:{days}", 10.0, lambda: report.overview(crawler.conn, days=days))
+        return _cached(f"report:{days}", lambda: report.overview(crawler.conn, days=days))
 
     @app.patch("/api/sources/{name}")
     def sources_patch(name: str, body: SourcePatch, request: Request) -> dict:

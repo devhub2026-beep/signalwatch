@@ -51,15 +51,28 @@
 SQLite 每次 fsync 都要穿一层 9p/virtiofs。要跑满就把数据卷换成 named volume，
 或把库放到容器内路径（代价：宿主机看不到库文件）。
 
-## 5. 测试
+## 5. 缓存（进程内 TTL，同一实例、同库、同 600 请求对比）
+
+| 跑法 | 吞吐 | p50 | 命中率 |
+| --- | --- | --- | --- |
+| 缓存关（`SIGNALWATCH_CACHE_TTL=0`） | **216.7 QPS** | 135.6 ms | 0 |
+| 缓存开（默认 2 秒） | **319.6 QPS** | **90.6 ms** | **97.7%** |
+
++47.5% 吞吐、p50 降 33%。缓存只挡「同一秒内重复读同一行」，`/api/items`、`/api/stats`、
+`/api/sources`、报表都走它；`/api/metrics` 里能看 `cache.hits/misses/hit_rate`。
+为什么不直接上 Redis：SQLite 首屏 0.4ms、瓶颈在网络不在查询，进程内字典就够了；
+真要多进程共享再换 Redis（`cache.py` 的 get/set/clear/stats 接口不用改）。
+
+## 6. 测试
 
 | 指标 | 数字 |
 | --- | --- |
-| 用例数 | **228**（含 5 个 skip：需要 GUI 或 defusedxml） |
-| 时长 | 约 85 秒 |
-| 接口触达率 | **60 / 60 = 100%**（`python tools/route_coverage.py`） |
+| 用例数 | **247**（含 4 个 skip） |
+| 时长 | 约 88 秒 |
+| 接口触达率 | **64 / 64 = 100%**（`python tools/route_coverage.py`） |
+| CI 本机演练 | 全通过（见 `docs/CI.md`） |
 
-## 6. 构建与镜像
+## 7. 构建与镜像
 
 | 指标 | 数字 |
 | --- | --- |
