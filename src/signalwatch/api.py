@@ -126,6 +126,13 @@ class NotifyIn(BaseModel):
     send_test: bool = False
 
 
+class WebhookIn(BaseModel):
+    url: str
+    name: str = ""
+    secret: str = ""
+    events: str = "new_items"
+
+
 class PruneIn(BaseModel):
     days: int = Field(default=90, ge=1, le=3650)
 
@@ -1021,6 +1028,30 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         out["config"] = notify.config(crawler.conn)
         out["last"] = notify.last_result(crawler.conn)
         return out
+
+    @app.get("/api/admin/webhooks")
+    def admin_webhooks(request: Request) -> dict:
+        _need(request, "admin")
+        return {"webhooks": notify.list_webhooks(crawler.conn)}
+
+    @app.post("/api/admin/webhooks")
+    def admin_webhooks_add(body: WebhookIn, request: Request) -> dict:
+        actor = _need(request, "admin")
+        try:
+            wid = notify.add_webhook(crawler.conn, url=body.url, name=body.name,
+                                     secret=body.secret, events=body.events)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        audit.log(crawler.conn, actor["username"], "webhook.add", str(wid), body.url)
+        return {"ok": True, "id": wid}
+
+    @app.delete("/api/admin/webhooks/{wid}")
+    def admin_webhooks_del(wid: int, request: Request) -> dict:
+        actor = _need(request, "admin")
+        ok = notify.remove_webhook(crawler.conn, wid)
+        if ok:
+            audit.log(crawler.conn, actor["username"], "webhook.del", str(wid), "")
+        return {"ok": ok}
 
     @app.get("/api/admin/settings")
     def admin_settings(request: Request) -> dict:

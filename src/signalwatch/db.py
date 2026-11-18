@@ -213,6 +213,21 @@ DDL = [
         value TEXT NOT NULL
     )
     """,
+    # v10：企业集成 —— 出站 webhook（新条目/源失败等事件回推给外部系统）。
+    # secret 只用于本地 HMAC 签名，不回显给界面。
+    """
+    CREATE TABLE IF NOT EXISTS webhooks (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT NOT NULL DEFAULT '',
+        url        TEXT NOT NULL,
+        secret     TEXT NOT NULL DEFAULT '',
+        events     TEXT NOT NULL DEFAULT 'new_items',
+        enabled    INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL DEFAULT 0,
+        last_ok    INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT NOT NULL DEFAULT ''
+    )
+    """,
     # v5：角色与权限从代码搬进表里 —— 加一个角色不用改代码，改一行数据就行
     """
     CREATE TABLE IF NOT EXISTS roles (

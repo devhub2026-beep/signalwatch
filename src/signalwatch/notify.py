@@ -5,9 +5,13 @@
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import smtplib
 import sqlite3
 import time
+import urllib.request
 from email.message import EmailMessage
 from email.utils import formatdate
 
@@ -249,4 +253,97 @@ def pump(conn: sqlite3.Connection, rows: list[dict], *, now: int | None = None,
             continue
     if sent:
         _touch(conn, at)
+    # 出站 webhook：有新条目就回推（独立于邮件收件人，与 SMTP 配置无关）。
+    if rows:
+        try:
+            dispatch_webhooks(conn, "new_items", {
+                "event": "new_items",
+                "count": len(rows),
+                "items": [
+                    {"source": r.get("source"), "title": r.get("title"),
+                     "url": r.get("url"), "when": r.get("when")}
+                    for r in rows[:20]
+                ],
+            })
+        except Exception as exc:      # webhook 失败不拖累邮件与采集主流程
+            from . import audit
+
+            audit.log(conn, "system", "webhook.dispatch_failed", "",
+                      f"{type(exc).__name__}: {exc}")
     return sent
+
+
+
+# ---- 出站 webhook（企业集成） -------------------------------------------------
+WEBHOOK_EVENTS = ("new_items", "source_failed", "digest")
+
+
+def list_webhooks(conn: sqlite3.Connection) -> list[dict]:
+    with guard(conn):
+        rows = conn.execute(
+            "SELECT id, name, url, events, enabled, created_at, last_ok, last_error"
+            " FROM webhooks ORDER BY id").fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        d.pop("secret", None)          # 口令不回显
+        out.append(d)
+    return out
+
+
+def add_webhook(conn: sqlite3.Connection, *, url: str, name: str = "",
+                secret: str = "", events: str = "new_items") -> int:
+    url = (url or "").strip()
+    if not url.startswith(("http://", "https://")):
+        raise ValueError("webhook URL 必须以 http:// 或 https:// 开头")
+    ev = ",".join(e.strip() for e in events.split(",") if e.strip()) or "new_items"
+    with guard(conn), conn:
+        cur = conn.execute(
+            "INSERT INTO webhooks(name, url, secret, events, created_at)"
+            " VALUES(?,?,?,?,?)",
+            (name.strip(), url, secret, ev, int(time.time() * 1000)))
+        return int(cur.lastrowid)
+
+
+def remove_webhook(conn: sqlite3.Connection, webhook_id: int) -> bool:
+    with guard(conn), conn:
+        cur = conn.execute("DELETE FROM webhooks WHERE id = ?", (webhook_id,))
+        return cur.rowcount > 0
+
+
+def _sign(secret: str, body: bytes) -> str:
+    return "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+
+
+def dispatch_webhooks(conn: sqlite3.Connection, event: str, payload: dict,
+                      timeout: float = 10.0) -> int:
+    """把事件推给所有订阅了该事件的 webhook，返回成功送达数。"""
+    with guard(conn):
+        rows = conn.execute(
+            "SELECT id, url, secret, events FROM webhooks WHERE enabled = 1").fetchall()
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    delivered = 0
+    for wh in rows:
+        subscribed = {e.strip() for e in wh["events"].split(",") if e.strip()}
+        if event not in subscribed:
+            continue
+        req = urllib.request.Request(wh["url"], data=body, method="POST")
+        req.add_header("Content-Type", "application/json; charset=utf-8")
+        req.add_header("X-SignalWatch-Event", event)
+        if wh["secret"]:
+            req.add_header("X-SignalWatch-Signature", _sign(wh["secret"], body))
+        ok, err = False, ""
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                ok = 200 <= resp.status < 300
+                if not ok:
+                    err = f"HTTP {resp.status}"
+        except Exception as exc:
+            err = f"{type(exc).__name__}: {str(exc)[:200]}"
+        with guard(conn), conn:
+            conn.execute(
+                "UPDATE webhooks SET last_ok = ?, last_error = ? WHERE id = ?",
+                (int(time.time() * 1000) if ok else 0, err, wh["id"]))
+        if ok:
+            delivered += 1
+    return delivered
