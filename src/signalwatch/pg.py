@@ -24,7 +24,7 @@ from typing import Any
 
 #: 有自增 id 列、需要 lastrowid 的表
 _ID_TABLES = {"items", "revisions", "runs", "rules", "users",
-              "categories", "jobs", "webhooks"}
+              "categories", "jobs", "webhooks", "organizations"}
 
 #: INSERT OR REPLACE 的目标表 → (冲突列, 需要覆盖更新的列)
 _REPLACE_TABLES = {

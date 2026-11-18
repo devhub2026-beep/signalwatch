@@ -15,7 +15,7 @@ import sqlite3
 import threading
 from pathlib import Path
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 # 一条 sqlite 连接不能被多个线程同时用（游标会互相踩，报 "not an error" / "another row available"）。
 # 这里给每条连接配一把锁，所有读写都先拿锁 —— 并发安全靠这一处，而不是靠调用方自觉。
@@ -82,7 +82,8 @@ DDL = [
         state         TEXT NOT NULL DEFAULT 'online',
         pinned        INTEGER NOT NULL DEFAULT 0,
         edited_at     INTEGER,
-        dup_of        INTEGER NOT NULL DEFAULT 0
+        dup_of        INTEGER NOT NULL DEFAULT 0,
+        org_id        INTEGER NOT NULL DEFAULT 0
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_items_published ON items(published_at DESC)",
@@ -152,7 +153,19 @@ DDL = [
         created_at    INTEGER NOT NULL,
         last_login_at INTEGER NOT NULL DEFAULT 0,
         token_version INTEGER NOT NULL DEFAULT 0,
-        must_change_password INTEGER NOT NULL DEFAULT 0
+        must_change_password INTEGER NOT NULL DEFAULT 0,
+        org_id           INTEGER NOT NULL DEFAULT 0
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS password_resets (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        username   TEXT    NOT NULL,
+        code_hash  TEXT    NOT NULL,
+        expires_at INTEGER NOT NULL,
+        tries      INTEGER NOT NULL DEFAULT 0,
+        used_at    INTEGER,
+        created_at INTEGER NOT NULL
     )
     """,
     """
@@ -228,6 +241,16 @@ DDL = [
         last_error TEXT NOT NULL DEFAULT ''
     )
     """,
+    # v10b：组织（多团队隔离的骨架）。org_id=0 表示「未归属 / 平台级」，
+    # 兼容现有单租户数据：默认全为 0，行为与升级前一致。
+    """
+    CREATE TABLE IF NOT EXISTS organizations (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        name       TEXT NOT NULL UNIQUE,
+        slug       TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL
+    )
+    """,
     # v5：角色与权限从代码搬进表里 —— 加一个角色不用改代码，改一行数据就行
     """
     CREATE TABLE IF NOT EXISTS roles (
@@ -247,7 +270,7 @@ BUILTIN_ROLES = [
     ("auditor", 20, "items.read,audit.read", 1),
     ("analyst", 50, "items.read,items.write,items.export,sources.manage,jobs.manage", 1),
     ("admin", 100, "items.read,items.write,items.export,items.delete,sources.manage,"
-                    "jobs.manage,users.manage,audit.read,settings.manage,categories.manage", 1),
+                    "jobs.manage,users.manage,audit.read,settings.manage,categories.manage,orgs.manage", 1),
 ]
 
 
@@ -302,12 +325,14 @@ def _migrate(conn) -> None:
                   "edited_at": "INTEGER",
                   "dup_of": "INTEGER NOT NULL DEFAULT 0",
                   "body_text": "TEXT NOT NULL DEFAULT ''",
-                  "body_bytes": "INTEGER NOT NULL DEFAULT 0"},
+                  "body_bytes": "INTEGER NOT NULL DEFAULT 0",
+                  "org_id": "INTEGER NOT NULL DEFAULT 0"},
         "rules": {"source": "TEXT NOT NULL DEFAULT ''",
                   "user_id": "INTEGER NOT NULL DEFAULT 0"},
         "users": {"email": "TEXT NOT NULL DEFAULT ''",
                   "display_name": "TEXT NOT NULL DEFAULT ''",
-                  "must_change_password": "INTEGER NOT NULL DEFAULT 0"},
+                  "must_change_password": "INTEGER NOT NULL DEFAULT 0",
+                  "org_id": "INTEGER NOT NULL DEFAULT 0"},
     }
     for table, cols in wanted.items():
         have = _columns(conn, table)

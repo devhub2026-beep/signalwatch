@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
-from . import __version__, admin, audit, auth, board, cache, dedupe, enrich, ingest, maintenance, notify, report, taxonomy, xlsx
+from . import __version__, admin, audit, auth, board, cache, dedupe, enrich, ingest, maintenance, notify, org, report, taxonomy, xlsx
 from .config import SETTINGS, Settings
 from .db import db_stats, init_db
 from .scheduler import Crawler
@@ -36,6 +36,23 @@ def _ts(ms: int | None) -> str:
     if not ms:
         return ""
     return time.strftime("%Y-%m-%d %H:%M", time.localtime(int(ms) / 1000))
+
+
+class RegisterIn(BaseModel):
+    """自助注册。邮箱可选：填了才能用验证码找回口令。"""
+    username: str
+    password: str
+    email: str = ""
+
+
+class ForgotIn(BaseModel):
+    who: str
+
+
+class ResetIn(BaseModel):
+    who: str
+    code: str
+    password: str
 
 
 class LoginIn(BaseModel):
@@ -131,6 +148,15 @@ class WebhookIn(BaseModel):
     name: str = ""
     secret: str = ""
     events: str = "new_items"
+
+
+class OrgIn(BaseModel):
+    name: str = Field(min_length=1)
+
+
+class OrgMemberIn(BaseModel):
+    username: str = Field(min_length=1)
+    org_id: int = Field(ge=0)
 
 
 class PruneIn(BaseModel):
@@ -632,6 +658,98 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
                         secure=secure, max_age=TOKEN_COOKIE_TTL, path="/")
         return resp
 
+    AUTO_LOGIN = (os.environ.get("SIGNALWATCH_AUTO_LOGIN", "") or "").strip().lower() in ("1", "true", "yes", "on")
+    AUTO_LOGIN_USER = (os.environ.get("SIGNALWATCH_AUTO_LOGIN_USER", "admin") or "admin").strip()
+
+    @app.get("/api/auth/mode")
+    def auth_mode() -> dict:
+        """登录页据此决定要不要显示「免密进入」。只在显式开了 AUTO_LOGIN 时才为真。"""
+        return {"auto_login": AUTO_LOGIN, "auto_user": AUTO_LOGIN_USER if AUTO_LOGIN else ""}
+
+    @app.post("/api/auth/auto")
+    def auth_auto(request: Request) -> JSONResponse:
+        """本机/局域网免密进入。危险开关：默认关闭，只在个人单机部署时打开。
+
+        打开后，任何能访问到这个端口的人都能拿到 admin 权限。它存在的原因是
+        自签证书 + 手机输入长口令太容易出错，不是为了让公网部署省事。
+        """
+        if not AUTO_LOGIN:
+            raise HTTPException(status_code=403, detail="本机没有开启免密进入")
+        row = auth.get_user(crawler.conn, AUTO_LOGIN_USER)
+        if row is None:
+            raise HTTPException(status_code=404, detail=f"免密用户不存在：{AUTO_LOGIN_USER}")
+        if not int(row["enabled"]):
+            raise HTTPException(status_code=403, detail="这个账号被停用了")
+        with crawler.conn:
+            crawler.conn.execute("UPDATE users SET last_login_at = ? WHERE id = ?",
+                                 (int(time.time() * 1000), row["id"]))
+        token = auth.make_token(crawler.conn, AUTO_LOGIN_USER)
+        user = auth._row_to_user(row)
+        audit.log(crawler.conn, AUTO_LOGIN_USER, "auth.auto", "", "免密进入")
+        secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+        csrf = secrets.token_urlsafe(32)
+        resp = JSONResponse({"token": token, "user": user, "csrf_token": csrf})
+        resp.set_cookie("sw_token", token, httponly=True, samesite="lax",
+                        secure=secure, max_age=TOKEN_COOKIE_TTL, path="/")
+        resp.set_cookie("sw_csrf", csrf, httponly=False, samesite="lax",
+                        secure=secure, max_age=TOKEN_COOKIE_TTL, path="/")
+        return resp
+
+    @app.post("/api/auth/register", status_code=201)
+    def auth_register(body: RegisterIn, request: Request) -> JSONResponse:
+        """自助注册。默认 viewer 角色；要管理权限由 admin 事后提权。"""
+        try:
+            result = auth.register(crawler.conn, body.username, body.password, body.email)
+        except auth.AuthError as exc:
+            raise HTTPException(status_code=exc.status, detail=str(exc))
+        audit.log(crawler.conn, body.username, "auth.register", "", "自助注册")
+        csrf = secrets.token_urlsafe(32)
+        secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+        resp = JSONResponse({"token": result["token"], "user": result["user"], "csrf_token": csrf},
+                            status_code=201)
+        resp.set_cookie("sw_token", result["token"], httponly=True, samesite="lax",
+                        secure=secure, max_age=TOKEN_COOKIE_TTL, path="/")
+        resp.set_cookie("sw_csrf", csrf, httponly=False, samesite="lax",
+                        secure=secure, max_age=TOKEN_COOKIE_TTL, path="/")
+        return resp
+
+    @app.post("/api/auth/forgot")
+    def auth_forgot(body: ForgotIn) -> dict:
+        """发验证码。收件地址取用户资料里的 email；没填或不认识这个人都返回 sent=false。"""
+        made = auth.make_reset(crawler.conn, body.who)
+        if made is None:
+            audit.log(crawler.conn, body.who, "auth.forgot_miss", "", "没有这个账号或已停用")
+            return {"ok": True, "sent": False,
+                    "hint": "没找到这个账号，或者账号还没填邮箱（找管理员补一条）"}
+        username, code = made
+        row = auth.get_user(crawler.conn, username)
+        to = (row["email"] or "").strip() if row else ""
+        if not to:
+            return {"ok": True, "sent": False, "hint": "这个账号没填邮箱，找管理员补一条再试"}
+        body_text = (
+            "你正在重置 SignalWatch 的口令。\n\n"
+            f"账号：{username}\n"
+            f"验证码：{code}\n"
+            f"有效期：{auth.RESET_TTL // 60} 分钟\n\n"
+            "不是你操作的，忽略这封邮件即可（没人拿到验证码就改不了）。\n"
+        )
+        try:
+            notify.send(crawler.conn, "SignalWatch 重置口令验证码", body_text, to=to)
+        except Exception as exc:                       # 邮件挂了不能把验证码吞掉
+            audit.log(crawler.conn, username, "auth.forgot_fail", "", str(exc))
+            return {"ok": True, "sent": False, "hint": f"邮件没发出去：{exc}"}
+        audit.log(crawler.conn, username, "auth.forgot", "", f"验证码寄到 {to}")
+        return {"ok": True, "sent": True, "to": to[:3] + "***" + to[to.find("@"):] if "@" in to else ""}
+
+    @app.post("/api/auth/reset")
+    def auth_reset(body: ResetIn) -> dict:
+        try:
+            username = auth.reset_password(crawler.conn, body.who, body.code, body.password)
+        except auth.AuthError as exc:
+            raise HTTPException(status_code=exc.status, detail=str(exc))
+        audit.log(crawler.conn, username, "auth.reset", "", "用验证码重置口令")
+        return {"ok": True, "username": username}
+
     @app.post("/api/auth/logout")
     def auth_logout(request: Request) -> dict:
         _check_csrf(request)
@@ -1051,6 +1169,36 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         ok = notify.remove_webhook(crawler.conn, wid)
         if ok:
             audit.log(crawler.conn, actor["username"], "webhook.del", str(wid), "")
+        return {"ok": ok}
+
+    @app.get("/api/admin/orgs")
+    def admin_orgs(request: Request) -> dict:
+        _need(request, "admin")
+        return {"orgs": org.list_orgs(crawler.conn)}
+
+    @app.post("/api/admin/orgs")
+    def admin_orgs_add(body: OrgIn, request: Request) -> dict:
+        actor = _need(request, "admin")
+        try:
+            oid = org.create_org(crawler.conn, body.name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        audit.log(crawler.conn, actor["username"], "org.add", str(oid), body.name)
+        return {"ok": True, "id": oid}
+
+    @app.delete("/api/admin/orgs/{oid}")
+    def admin_orgs_del(oid: int, request: Request) -> dict:
+        actor = _need(request, "admin")
+        ok = org.delete_org(crawler.conn, oid)
+        if ok:
+            audit.log(crawler.conn, actor["username"], "org.del", str(oid), "")
+        return {"ok": ok}
+
+    @app.patch("/api/admin/orgs/members")
+    def admin_orgs_member(body: OrgMemberIn, request: Request) -> dict:
+        actor = _need(request, "admin")
+        ok = org.set_user_org(crawler.conn, body.username, body.org_id)
+        audit.log(crawler.conn, actor["username"], "org.member", body.username, str(body.org_id))
         return {"ok": ok}
 
     @app.get("/api/admin/settings")
