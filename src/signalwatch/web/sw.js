@@ -1,6 +1,6 @@
 // 最小 service worker：只缓存外壳，数据永远走网络（盯梢工具不能显示过期数据）
-const SHELL = "signalwatch-shell-v1";
-const SHELL_FILES = ["/", "/manifest.webmanifest"];
+const SHELL = "signalwatch-shell-v2";
+const SHELL_FILES = ["/", "/admin", "/manifest.webmanifest", "/manifest-admin.webmanifest"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES)).catch(() => {}));

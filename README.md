@@ -86,7 +86,7 @@ node admin-ui/e2e/mobile-sweep.mjs    # 13 个页面逐个量 scrollWidth，不�
 | 首轮全量抓取 | **约 5 秒**，入库 **100 条**（早期四源）；加两个政府源后又入库 46 条 |
 | 第二轮（同样 5 秒） | 新增 **0** 条 —— 去重生效 |
 | 数据库 | 156 KB → 加源后约 **200 KB**（SQLite，WAL） |
-| 单元测试 | **316 个，126 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / PWA 安装条件 / 桌面 12 页渲染 + 审计页） |
+| 单元测试 | **321 个，133 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / PWA 安装条件 / 桌面 12 页渲染 + 审计页） |
 | 正文抠取 | 两条路：巨潮 PDF 走 `pdftext.py`（纯标准库，ToUnicode 还原汉字子集字体），IT之家/少数派/政采/统计局走 `enrich.html_to_text()`（去掉脚本、导航、面包屑、文末版权）。实测一轮补 30 条：抠到 **25 条 / 77307 字**，空正文 3、下载失败 2 |
 | 跨源去重 | 标题归一后 Jaccard ≥ 0.82、72 小时内、跨源才判重；早的那条留、晚的标 `dup_of` |
 | 备份 | `python run.py backup --keep 3` → `data/backups/backup-20261116-181845.db`（1068 KB）；启动时距上次超 20 小时自动备一次 |
@@ -95,7 +95,7 @@ node admin-ui/e2e/mobile-sweep.mjs    # 13 个页面逐个量 scrollWidth，不�
 | 并发写入 | 50 线程同批插入 10 条 → 库里正好 10 条，无 `database is locked` |
 | 接口压测·宿主机（`python loadtest.py`） | 30 线程 × 20 次 = **600 请求 / 2.13 秒**，**281 QPS**，p50 **103 ms** / p95 **127 ms** / p99 **138 ms**，错误 **0** |
 | 接口压测·容器（同一份代码） | **600 请求 / 10.05 秒**，**59.7 QPS**，p50 **466 ms** / p95 **1104 ms** / p99 **1290 ms**，错误 **0** —— Docker Desktop 的 Windows bind mount 让 SQLite 读慢 4–5 倍，这是实测差距，不是估算 |
-| 接口触达率 | **78/78 = 100%**（`python tools/route_coverage.py`：跑一遍测试，统计 64 条路由里有几条真被请求过） |
+| 接口触达率 | **80/80 = 100%**（`python tools/route_coverage.py`：跑一遍测试，统计 80 条路由里有几条真被请求过） |
 | 进程内指标 | `GET /api/metrics` 实测 `{"requests":603,"by_status":{"200":602},"latency_ms":{"p50":441.5,"p95":1083.5,"p99":1264.0,"samples":602}}`（容器内，压力测试后读取） |
 | 单文件 exe（PyInstaller） | `dist\SignalWatch.exe` **19.7 MB**，`serve --port 8899` 起来后 `/api/health` 返回 200；`desktop` 模式窗口能开（截图 `docs/shot-exe-desktop.png`） |
 | 自动补正文 | 开启后每轮最多抠 2 条（默认 cninfo），累计库里 **155 / 1904 条**有正文（cninfo 146、ithome 7、sspai 2）。手动 `run.py enrich --limit 30` 可批量补；`--source` 留空就覆盖所有能补的源 |
@@ -200,7 +200,7 @@ docker build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple 
 
 ## 接口
 
-共 **78 条路由**（`tests/test_docs.py` 会核对：代码里每条路由都必须在下面出现，否则测试失败）。
+共 **80 条路由**（`tests/test_docs.py` 会核对：代码里每条路由都必须在下面出现，否则测试失败）。
 
 **页面与 PWA**
 
@@ -210,7 +210,8 @@ docker build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple 
 | GET | `/admin` | 管理台 |
 | GET | `/index.css`、`/index.js`、`/admin.css`、`/admin.js` | 外置前端样式与脚本（CSP 不允许内联） |
 | GET | `/assets/{path:path}`、`/admin/assets/{path:path}` | Vue 管理端构建产物（JS/CSS，带路径遍历防护） |
-| GET | `/manifest.webmanifest`、`/sw.js` | PWA 清单与 Service Worker |
+| GET | `/manifest.webmanifest`、`/manifest-admin.webmanifest`、`/sw.js` | PWA 清单（公开页 / 管理台）与 Service Worker |
+| GET | `/ca.crt` | 下载本地 CA 公钥证书（装到手机才能让 https 受信任、SW 才能注册） |
 | GET | `/icon-192.png`、`/icon-512.png`、`/apple-touch-icon.png` | 图标 |
 | GET | `/docs`、`/redoc`、`/openapi.json`、`/docs/oauth2-redirect` | FastAPI 自带的交互式接口文档 |
 
@@ -298,6 +299,21 @@ docker compose up --build      # http://127.0.0.1:8766
 数据库挂到 `./data`，容器重启不丢；端口默认只绑本机。
 
 ## 手机装 PWA（需要 HTTPS）
+
+**第一步不是点安装，是让手机信任证书。** Chrome 在「证书错误」的页面上会拒绝注册 Service Worker，
+没有 Service Worker 就不会出现安装入口——所以自签证书下永远装不了。
+
+1. 生成一套「本地 CA + 服务器证书」：`python tools/make_ca.py`（借 docker 里的 openssl，本机不需要装 openssl）
+2. 手机浏览器打开 `https://<电脑IP>:8443/ca.crt` 下载证书
+   - Android：设置 → 安全 → 加密与凭据 → 安装证书 → **CA 证书** → 选刚下载的文件
+   - iOS：下载后到「设置 → 通用 → VPN与设备管理」安装描述文件，再去「关于本机 → 证书信任设置」把它打开
+3. 重新打开 `https://<电脑IP>:8443/admin`，地址栏不再报红
+4. 浏览器菜单里才会出现「安装应用 / 添加到手机」（Chrome、Edge、三星浏览器有；微信/QQ/UC/夸克没有）
+
+验证这台机器上是否真的可装：`cd admin-ui && node e2e/pwa-installable.mjs`
+（它调 Chromium 自己的 `Page.getInstallabilityErrors`，返回空数组才算能装；不靠 `beforeinstallprompt`，因为 headless 不抛它）
+
+
 
 PWA 的安装条件浏览器卡得很死：**必须是 https（或 localhost）**。手机连 `http://10.128.8.114:8766` 能看到页面，但装不了。
 
@@ -459,7 +475,7 @@ python run.py worker --once --recover # 把上次中断的 running 打回队列�
 - 桌面端也要登录（可以「以访客身份进入」只读看板），改动都会记审计；
 - 调度是进程内的：窗口和服务都关着就不抓。本机靠「开机 `start_docker.ps1` → 容器 `restart: unless-stopped`」兜住；计划任务那条路要管理员权限（本机 `schtasks` 被拒）；
 - docker 本机验过镜像构建与 `compose up`，但**没在多机器/多架构上验**（只有这台 Windows + Docker Desktop）；
-- **手机 PWA 没在真机装过**：`manifest` 与 `sw.js` 都在，但 PWA 安装要求 https 或 localhost，手机走局域网地址（http）装不上；
+- **手机 PWA 没在真机装过**：`/admin` 现在 manifest + SW 齐、Chromium 判定 `installabilityErrors` 为空（`node e2e/pwa-installable.mjs` 通过），但真机安装要先把 `ca.crt` 装进手机，这一步还没在手机上走完；
 - 令牌用自签 HMAC，没有刷新机制，7 天过期就得重登。
 
 ## 目录
@@ -485,7 +501,7 @@ src/signalwatch/
   desktop.py     tkinter 十二页常驻窗口 + 浮窗提醒
   sources/       cninfo / rss / arxiv / html_list（统计局、政府采购）
   web/           index.html（时间线）、admin.html（管理台）、manifest、sw.js
-tests/           233 个用例（去重、并发、源解析、路由、权限、审计、报表、任务六态、邮件推送、配置隔离、PDF 抠字、备份恢复、跨源去重、Excel、PWA、桌面 12 页渲染）
+tests/           321 个用例（去重、并发、源解析、路由、权限、审计、报表、任务六态、邮件推送、配置隔离、PDF 抠字、备份恢复、跨源去重、Excel、PWA、桌面 12 页渲染）
 docs/            验收截图
 ```
 

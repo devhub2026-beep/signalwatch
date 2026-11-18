@@ -425,6 +425,30 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
     def manifest() -> FileResponse:
         return FileResponse(WEB_DIR / "manifest.webmanifest", media_type="application/manifest+json")
 
+    @app.get("/ca.crt")
+    def ca_cert() -> FileResponse:
+        """把本地 CA 的**公钥证书**放出来，好让手机直接下载安装。
+
+        只放公钥证书（ca.crt），签名私钥 ca.key 生成完就删了，不在盘上也不在包里。
+        """
+        ca = None
+        for cand in (os.environ.get("SIGNALWATCH_CA_CRT", ""),
+                     "/certs/ca.crt",
+                     str(SETTINGS.home / "certs" / "ca.crt")):
+            if cand and Path(cand).exists():
+                ca = Path(cand)
+                break
+        if ca is None:
+            raise HTTPException(status_code=404, detail="还没生成 CA：先跑 tools/make_ca.py")
+        return FileResponse(ca, media_type="application/x-x509-ca-cert",
+                            filename="signalwatch-ca.crt")
+
+    @app.get("/manifest-admin.webmanifest")
+    def manifest_admin() -> FileResponse:
+        """管理台的 manifest：start_url 是 /admin，装出来的图标点开直接进管理台。"""
+        return FileResponse(WEB_DIR / "manifest-admin.webmanifest",
+                            media_type="application/manifest+json")
+
     @app.get("/sw.js")
     def service_worker() -> FileResponse:
         return FileResponse(WEB_DIR / "sw.js", media_type="application/javascript")

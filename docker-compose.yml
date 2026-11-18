@@ -20,6 +20,7 @@ services:
       SIGNALWATCH_JOURNAL: delete
     volumes:
       - ./data:/data
+      - ./certs:/certs:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8766/api/health',timeout=3)"]

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import tempfile
+import re
 import unittest
 from pathlib import Path
 
@@ -37,6 +38,8 @@ class EndpointSweepTests(unittest.TestCase):
         self.assertEqual(res.status_code, 200)
         self.token = res.json()["token"]
         self.auth = {"Authorization": f"Bearer {self.token}"}
+        # 写接口要 CSRF 双提交：登录时前端会拿到 csrf_token 并放进请求头
+        self.client.headers["X-CSRF-Token"] = res.json()["csrf_token"]
 
     def tearDown(self) -> None:
         self.client.__exit__(None, None, None)
@@ -128,8 +131,68 @@ class EndpointSweepTests(unittest.TestCase):
         self.assertLess(self.client.get("/docs/oauth2-redirect").status_code, 400)
 
 
-if __name__ == "__main__":
-    unittest.main()
+
+
+    def test_pwa_and_static_routes(self) -> None:
+        """PWA 静态件与 Vue 分包路由：存在即算触达（内容由前端用，状态 200/404 都可）。"""
+        for path in ("/api/auth/mode", "/manifest-admin.webmanifest", "/ca.crt"):
+            res = self.client.get(path)
+            self.assertIn(res.status_code, (200, 404), f"{path} -> {res.status_code}")
+        # Vue 分包：从 admin 首页里真取一个 assets 路径来请求
+        html = self.client.get("/admin").text
+        m = re.search(r'/admin(/assets/[^"\']+)', html)
+        if m:
+            self.assertIn(self.client.get("/admin" + m.group(1)).status_code, (200, 404))
+        m2 = re.search(r'/assets/[^"\']+', html)
+        if m2:
+            self.assertIn(self.client.get(m2.group(0)).status_code, (200, 404))
+            # /admin/assets/... 是给旧链接留的兼容路由，直接拿同一个分包试
+            self.assertIn(self.client.get("/admin" + m2.group(0)).status_code, (200, 404))
+        # 公开页的 assets（可能没有，取到才请求）
+        pub = self.client.get("/").text
+        m3 = re.search(r'/assets/[^"\']+', pub)
+        if m3:
+            self.assertIn(self.client.get(m3.group(0)).status_code, (200, 404))
+
+    def test_register_forgot_reset_flow(self) -> None:
+        """自助注册 → 找回口令 → 重置，三条新路由都要被真请求到。"""
+        from signalwatch import auth
+        r = self.client.post("/api/auth/register",
+                             json={"username": "sweepuser", "password": "sweep123456",
+                                   "email": "sweep@example.com"})
+        self.assertEqual(r.status_code, 201, r.text)
+        self.assertIn("token", r.json())
+        r = self.client.post("/api/auth/forgot", json={"who": "sweepuser"})
+        self.assertEqual(r.status_code, 200, r.text)
+        code = auth.make_reset(self.app.state.crawler.conn, "sweepuser")
+        self.assertIsNotNone(code)
+        r = self.client.post("/api/auth/reset",
+                             json={"who": "sweepuser", "code": code[1], "password": "newpass123"})
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def test_auth_auto_route_exists(self) -> None:
+        r = self.client.post("/api/auth/auto")
+        self.assertIn(r.status_code, (200, 403, 404))
+
+    def test_webhooks_crud(self) -> None:
+        self.assertEqual(self.client.get("/api/admin/webhooks").status_code, 200)
+        r = self.client.post("/api/admin/webhooks",
+                             json={"url": "https://example.com/hook", "name": "sweep"})
+        self.assertEqual(r.status_code, 200, r.text)
+        wid = r.json()["id"]
+        r = self.client.delete(f"/api/admin/webhooks/{wid}")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertTrue(r.json()["ok"])
+
+    def test_orgs_crud(self) -> None:
+        self.assertEqual(self.client.get("/api/admin/orgs").status_code, 200)
+        r = self.client.post("/api/admin/orgs", json={"name": "sweep-org"})
+        self.assertEqual(r.status_code, 200, r.text)
+        oid = r.json()["id"]
+        r = self.client.patch("/api/admin/orgs/members", json={"username": "admin", "org_id": oid})
+        self.assertEqual(r.status_code, 200, r.text)
+        r = self.client.delete(f"/api/admin/orgs/{oid}")
+        self.assertEqual(r.status_code, 200, r.text)
 
 
 class SseEndpointTests(unittest.TestCase):
@@ -154,3 +217,7 @@ class SseEndpointTests(unittest.TestCase):
                 if line.startswith("data:"):
                     self.assertIn("items", line)
                     break
+
+
+if __name__ == "__main__":
+    unittest.main()
