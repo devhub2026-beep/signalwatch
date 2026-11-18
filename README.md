@@ -173,7 +173,7 @@ docker build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple 
 
 ## 接口
 
-共 **64 条路由**（`tests/test_docs.py` 会核对：代码里每条路由都必须在下面出现，否则测试失败）。
+共 **66 条路由**（`tests/test_docs.py` 会核对：代码里每条路由都必须在下面出现，否则测试失败）。
 
 **页面与 PWA**
 
@@ -182,6 +182,7 @@ docker build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple 
 | GET | `/` | 时间线（手机可装成 App） |
 | GET | `/admin` | 管理台 |
 | GET | `/index.css`、`/index.js`、`/admin.css`、`/admin.js` | 外置前端样式与脚本（CSP 不允许内联） |
+| GET | `/assets/{path:path}`、`/admin/assets/{path:path}` | Vue 管理端构建产物（JS/CSS，带路径遍历防护） |
 | GET | `/manifest.webmanifest`、`/sw.js` | PWA 清单与 Service Worker |
 | GET | `/icon-192.png`、`/icon-512.png`、`/apple-touch-icon.png` | 图标 |
 | GET | `/docs`、`/redoc`、`/openapi.json`、`/docs/oauth2-redirect` | FastAPI 自带的交互式接口文档 |
