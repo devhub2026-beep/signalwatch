@@ -580,6 +580,7 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         # Vue 管理端（构建产物在 web/admin-vue/），旧手写版保留在 web/admin.html 作回滚备份
         return FileResponse(WEB_DIR / "admin-vue" / "index.html", media_type="text/html; charset=utf-8")
 
+    @app.get("/admin/assets/{path:path}")
     @app.get("/assets/{path:path}")
     def vue_assets(path: str) -> FileResponse:
         """服务 Vue 管理端构建出的 /assets/* 静态资源，带路径遍历防护。"""
