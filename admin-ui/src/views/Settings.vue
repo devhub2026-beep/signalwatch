@@ -24,6 +24,34 @@
       <el-button @click="saveNotify(false)">保存</el-button>
       <el-button type="primary" @click="saveNotify(true)">保存并发测试邮件</el-button>
     </el-card>
+
+    <el-card shadow="never" class="mt16">
+      <template #header>出站 Webhook（企业集成）</template>
+      <el-form inline class="mt8">
+        <el-form-item label="名称"><el-input v-model="w.name" placeholder="如 企业微信机器人" style="width:160px" /></el-form-item>
+        <el-form-item label="URL"><el-input v-model="w.url" placeholder="https://..." style="width:280px" /></el-form-item>
+        <el-form-item label="密钥"><el-input v-model="w.secret" placeholder="HMAC 签名，可留空" style="width:170px" /></el-form-item>
+        <el-form-item label="事件"><el-input v-model="w.events" placeholder="new_items,source_failed" style="width:200px" /></el-form-item>
+        <el-button type="primary" @click="addWebhook">添加</el-button>
+      </el-form>
+      <el-table :data="webhooks" class="mt16" size="small" empty-text="还没有 webhook">
+        <el-table-column prop="name" label="名称" width="160" />
+        <el-table-column prop="url" label="URL" show-overflow-tooltip />
+        <el-table-column prop="events" label="事件" width="200" />
+        <el-table-column label="最近结果" width="220">
+          <template #default="{ row }">
+            <span v-if="row.last_ok" style="color:#16a34a">{{ new Date(row.last_ok).toLocaleString() }} · 成功</span>
+            <span v-else-if="row.last_error" style="color:#dc2626" :title="row.last_error">{{ row.last_error.slice(0, 30) }}</span>
+            <span v-else style="color:#9ca3af">未发送过</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="80">
+          <template #default="{ row }">
+            <el-button link type="danger" @click="delWebhook(row.id)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
   </div>
 </template>
 
@@ -86,7 +114,31 @@ async function saveNotify(sendTest) {
   }
 }
 
-onMounted(() => { loadSettings(); loadNotify() })
+const webhooks = ref([])
+const w = ref({ name: '', url: '', secret: '', events: 'new_items' })
+
+async function loadWebhooks() {
+  const r = await http.get('/admin/webhooks')
+  webhooks.value = r.data.webhooks || []
+}
+
+async function addWebhook() {
+  if (!w.value.url.trim()) { ElMessage.warning('填 URL'); return }
+  try {
+    await http.post('/admin/webhooks', { ...w.value })
+    w.value = { name: '', url: '', secret: '', events: 'new_items' }
+    ElMessage.success('已添加')
+    await loadWebhooks()
+  } catch (e) { ElMessage.error(e.userMessage || '添加失败') }
+}
+
+async function delWebhook(id) {
+  await http.delete(`/admin/webhooks/${id}`)
+  ElMessage.success('已删除')
+  await loadWebhooks()
+}
+
+onMounted(() => { loadSettings(); loadNotify(); loadWebhooks() })
 </script>
 
 <style scoped>
