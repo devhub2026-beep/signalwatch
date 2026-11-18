@@ -50,6 +50,15 @@
 新条目进来会弹右下角浮窗 + 提示音，不用一直盯着。
 
 ## 管理台里有什么
+管理台是 Vue 3 + Element Plus（`admin-ui/`，构建产物在 `src/signalwatch/web/admin-vue/`），入口 `/admin`。
+
+**手机上也能用**：窗口宽度 ≤ 820px 时左侧固定栏收成抽屉（左上角汉堡），条目页从 5 列表格换成卡片（标题两行、时间/来源/状态一行、置顶/历史/时间线按钮）。两条 playwright 回归脚本钉住这件事：
+
+```
+node admin-ui/e2e/mobile.spec.mjs     # 竖屏：无固定侧栏 / 有汉堡 / 抽屉 13 项 / 条目页出卡片
+node admin-ui/e2e/mobile-sweep.mjs    # 13 个页面逐个量 scrollWidth，不许横向溢出
+```
+
 
 `http://127.0.0.1:8766/admin`
 
