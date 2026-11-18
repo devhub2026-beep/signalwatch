@@ -62,7 +62,23 @@ if (-not (Test-Path $compose)) { $compose = Join-Path $root "compose.yml" }
 
 & $docker compose -f $compose --profile tls up -d 2>&1 | ForEach-Object { Say ([string]$_) }
 if ($LASTEXITCODE -eq 0) {
-    Say "compose up -d 完成：http://127.0.0.1:8766 ，手机 HTTPS：https://<局域网IP>:8443"
+    # 换网后 IP 会变，这里现算，不写死
+    $lanIp = $null
+    foreach ($line in (ipconfig | Select-String "IPv4")) {
+        if ($line.Line -match "(\d+\.\d+\.\d+\.\d+)") {
+            $ip = $Matches[1]
+            if ($ip -match "^(127\.|169\.254\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)") { continue }
+            $lanIp = $ip
+            break
+        }
+    }
+    Say "compose up -d 完成：本机 http://127.0.0.1:8766"
+    if ($lanIp) {
+        Say "手机访问：https://$lanIp`:8443 （手机需连同一个 Wi-Fi）"
+        Say "换网后如果打不开：先跑 make_cert.ps1 重签证书，再回来跑这个脚本"
+    } else {
+        Say "手机访问：没检测到局域网 IP，检查网络连接"
+    }
 } else {
     Say "compose up -d 失败（exit $LASTEXITCODE）"
     exit 1

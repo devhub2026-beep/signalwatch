@@ -160,7 +160,7 @@ class DefaultPasswordPolicyTests(unittest.TestCase):
 
     def test_schema_v10_and_legacy_default_password_detection(self) -> None:
         conn = memory_db()
-        self.assertEqual(SCHEMA_VERSION, 10)
+        self.assertEqual(SCHEMA_VERSION, 11)
         columns = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
         self.assertIn("must_change_password", columns)
         auth.seed_admin(conn)

@@ -28,6 +28,7 @@ STEPS: tuple[tuple[int, str], ...] = (
     (8, "marks 按用户隔离（PRIMARY KEY(user_id,item_id)）；marks_legacy 一次性搬迁"),
     (9, "分类入库即归类：taxonomy.ensure_seeded + backfill；schema_meta 跟随迁移更新"),
     (10, "users.must_change_password：默认口令首次登录强制修改"),
+    (11, "password_resets：自助注册与邮箱验证码找回口令"),
 )
 
 DDL = """

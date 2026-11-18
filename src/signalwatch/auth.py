@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -292,3 +293,101 @@ def enforce_default_password_policy(conn) -> None:
     if verify_password("admin123", row["pwd_salt"], row["pwd_hash"]):
         with conn:
             conn.execute("UPDATE users SET must_change_password = 1 WHERE id = ?", (row["id"],))
+
+# --- 自助注册与找回口令 ------------------------------------------------------
+#
+# 为什么要做：手机上敲一个 16 位随机口令，十次有八次敲错，敲错了还要等限速。
+# 让人自己注册、自己收验证码改口令，比"发一个口令给他"可靠。
+
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
+RESET_TTL = 600          # 验证码 10 分钟有效
+RESET_MAX_TRIES = 5      # 一条验证码最多试 5 次
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def register(conn, username: str, password: str, email: str = "", role: str = "viewer") -> dict:
+    """自助注册。默认给 viewer，管理员事后可以提权，避免注册即拿到删数据的权限。"""
+    username = (username or "").strip()
+    if not USERNAME_RE.match(username):
+        raise AuthError("用户名要 3–32 位，只能用字母、数字、下划线、点、短横线")
+    if len(password or "") < 6:
+        raise AuthError("口令至少 6 位")
+    email = (email or "").strip()
+    if email and "@" not in email:
+        raise AuthError("邮箱格式不对")
+    if get_user(conn, username) is not None:
+        raise AuthError("用户名已被占用", status=409)
+    try:
+        create_user(conn, username, password, role=role, email=email)
+    except ValueError as exc:
+        raise AuthError(str(exc), status=409) from None
+    return login(conn, username, password)
+
+
+def find_user(conn, who: str):
+    """who 可以是用户名，也可以是邮箱。邮箱必须唯一命中。"""
+    who = (who or "").strip()
+    if not who:
+        return None
+    row = get_user(conn, who)
+    if row is not None:
+        return row
+    if "@" in who:
+        rows = conn.execute("SELECT * FROM users WHERE lower(email) = ?", (who.lower(),)).fetchall()
+        if len(rows) == 1:
+            return rows[0]
+    return None
+
+
+def _hash_code(code: str) -> str:
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def make_reset(conn, who: str):
+    """生成 6 位验证码。用户不存在或没填邮箱时返回 None（调用方不要泄露差在哪）。"""
+    row = find_user(conn, who)
+    if row is None or not int(row["enabled"]):
+        return None
+    code = f"{secrets.randbelow(10 ** 6):06d}"
+    now = _now_ms()
+    with conn:
+        conn.execute("UPDATE password_resets SET used_at = ? WHERE username = ? AND used_at IS NULL",
+                     (now, row["username"]))
+        conn.execute(
+            "INSERT INTO password_resets(username, code_hash, expires_at, tries, created_at)"
+            " VALUES (?,?,?,0,?)",
+            (row["username"], _hash_code(code), now + RESET_TTL * 1000, now),
+        )
+    return str(row["username"]), code
+
+
+def reset_password(conn, who: str, code: str, new_password: str) -> str:
+    """校验验证码并改口令。改完把 token_version 加一，旧令牌立刻作废。"""
+    if len(new_password or "") < 6:
+        raise AuthError("新口令至少 6 位")
+    row = find_user(conn, who)
+    if row is None:
+        raise AuthError("验证码不对或已过期")
+    now = _now_ms()
+    rec = conn.execute(
+        "SELECT * FROM password_resets WHERE username = ? AND used_at IS NULL"
+        " ORDER BY id DESC LIMIT 1",
+        (row["username"],),
+    ).fetchone()
+    if rec is None or int(rec["expires_at"]) < now:
+        raise AuthError("验证码不对或已过期")
+    if int(rec["tries"]) >= RESET_MAX_TRIES:
+        raise AuthError("这条验证码试错太多次了，重新获取一条", status=429)
+    if not hmac.compare_digest(_hash_code((code or "").strip()), rec["code_hash"]):
+        with conn:
+            conn.execute("UPDATE password_resets SET tries = tries + 1 WHERE id = ?", (rec["id"],))
+        raise AuthError("验证码不对或已过期")
+    salt, digest = hash_password(new_password)
+    with conn:
+        conn.execute("UPDATE users SET pwd_salt = ?, pwd_hash = ?, token_version = token_version + 1,"
+                     " must_change_password = 0 WHERE username = ?", (salt, digest, row["username"]))
+        conn.execute("UPDATE password_resets SET used_at = ? WHERE id = ?", (now, rec["id"]))
+    return str(row["username"])

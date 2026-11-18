@@ -12,16 +12,21 @@
         </el-form-item>
         <el-button type="primary" class="w100" :loading="loading" @click="onLogin">登录</el-button>
         <div v-if="err" class="err">{{ err }}</div>
-        <div class="muted">首次启动建 admin / admin123，首次登录须改口令</div>
+        <div class="links">
+          <router-link to="/forgot">忘记口令？</router-link>
+          <span class="sep">·</span>
+          <router-link to="/register">注册新账号</router-link>
+        </div>
       </el-form>
     </el-card>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { auth } from '../stores/auth'
+import http from '../api'
 
 const router = useRouter()
 const route = useRoute()
@@ -29,6 +34,7 @@ const username = ref('admin')
 const password = ref('')
 const loading = ref(false)
 const err = ref('')
+const autoTried = ref(false)
 
 async function onLogin() {
   if (!username.value || !password.value) {
@@ -55,4 +61,6 @@ async function onLogin() {
 .w100 { width: 100%; }
 .err { color: #dc2626; font-size: 13px; margin-top: 8px; }
 .muted { color: #9ca3af; font-size: 12px; margin-top: 8px; }
+.links { margin-top: 10px; font-size: 13px; text-align: center; }
+.sep { margin: 0 6px; color: #d1d5db; }
 </style>

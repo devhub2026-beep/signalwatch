@@ -3,6 +3,8 @@ import { auth } from '../stores/auth'
 
 const routes = [
   { path: '/login', component: () => import('../views/Login.vue'), meta: { public: true, title: '登录' } },
+  { path: '/register', component: () => import('../views/Register.vue'), meta: { public: true, title: '注册' } },
+  { path: '/forgot', component: () => import('../views/Forgot.vue'), meta: { public: true, title: '找回口令' } },
   { path: '/', redirect: '/overview' },
   { path: '/overview', component: () => import('../views/Overview.vue'), meta: { title: '概览' } },
   { path: '/home', component: () => import('../views/HomeFeed.vue'), meta: { title: '首页' } },

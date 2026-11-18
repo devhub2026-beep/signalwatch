@@ -22,6 +22,13 @@ export const auth = reactive({
     return r.data
   },
 
+  /** 免密进入：只在服务端开了 SIGNALWATCH_AUTO_LOGIN 时可用，个人单机部署用。 */
+  async autoLogin() {
+    const r = await http.post('/auth/auto')
+    this.user = r.data.user
+    return r.data
+  },
+
   async logout() {
     try {
       await http.post('/auth/logout')

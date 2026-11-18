@@ -77,7 +77,7 @@
 | 首轮全量抓取 | **约 5 秒**，入库 **100 条**（早期四源）；加两个政府源后又入库 46 条 |
 | 第二轮（同样 5 秒） | 新增 **0** 条 —— 去重生效 |
 | 数据库 | 156 KB → 加源后约 **200 KB**（SQLite，WAL） |
-| 单元测试 | **247 个，88 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / PWA 安装条件 / 桌面 12 页渲染 + 审计页） |
+| 单元测试 | **316 个，126 秒全绿**（业务层 / 邮件推送 / 配置隔离 / 网页端接口 / 政府源解析 / 解析护栏 / PDF 抠字 / 备份恢复 / 跨源去重 / Excel / PWA 安装条件 / 桌面 12 页渲染 + 审计页） |
 | 正文抠取 | 两条路：巨潮 PDF 走 `pdftext.py`（纯标准库，ToUnicode 还原汉字子集字体），IT之家/少数派/政采/统计局走 `enrich.html_to_text()`（去掉脚本、导航、面包屑、文末版权）。实测一轮补 30 条：抠到 **25 条 / 77307 字**，空正文 3、下载失败 2 |
 | 跨源去重 | 标题归一后 Jaccard ≥ 0.82、72 小时内、跨源才判重；早的那条留、晚的标 `dup_of` |
 | 备份 | `python run.py backup --keep 3` → `data/backups/backup-20261116-181845.db`（1068 KB）；启动时距上次超 20 小时自动备一次 |
@@ -86,7 +86,7 @@
 | 并发写入 | 50 线程同批插入 10 条 → 库里正好 10 条，无 `database is locked` |
 | 接口压测·宿主机（`python loadtest.py`） | 30 线程 × 20 次 = **600 请求 / 2.13 秒**，**281 QPS**，p50 **103 ms** / p95 **127 ms** / p99 **138 ms**，错误 **0** |
 | 接口压测·容器（同一份代码） | **600 请求 / 10.05 秒**，**59.7 QPS**，p50 **466 ms** / p95 **1104 ms** / p99 **1290 ms**，错误 **0** —— Docker Desktop 的 Windows bind mount 让 SQLite 读慢 4–5 倍，这是实测差距，不是估算 |
-| 接口触达率 | **64/64 = 100%**（`python tools/route_coverage.py`：跑一遍测试，统计 64 条路由里有几条真被请求过） |
+| 接口触达率 | **78/78 = 100%**（`python tools/route_coverage.py`：跑一遍测试，统计 64 条路由里有几条真被请求过） |
 | 进程内指标 | `GET /api/metrics` 实测 `{"requests":603,"by_status":{"200":602},"latency_ms":{"p50":441.5,"p95":1083.5,"p99":1264.0,"samples":602}}`（容器内，压力测试后读取） |
 | 单文件 exe（PyInstaller） | `dist\SignalWatch.exe` **19.7 MB**，`serve --port 8899` 起来后 `/api/health` 返回 200；`desktop` 模式窗口能开（截图 `docs/shot-exe-desktop.png`） |
 | 自动补正文 | 开启后每轮最多抠 2 条（默认 cninfo），累计库里 **155 / 1904 条**有正文（cninfo 146、ithome 7、sspai 2）。手动 `run.py enrich --limit 30` 可批量补；`--source` 留空就覆盖所有能补的源 |
@@ -173,7 +173,7 @@ docker build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple 
 
 ## 接口
 
-共 **66 条路由**（`tests/test_docs.py` 会核对：代码里每条路由都必须在下面出现，否则测试失败）。
+共 **78 条路由**（`tests/test_docs.py` 会核对：代码里每条路由都必须在下面出现，否则测试失败）。
 
 **页面与 PWA**
 
@@ -206,6 +206,16 @@ docker build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/api/auth/login`、`/api/auth/logout` | 登录（同时下发 Secure-ready cookie 与 CSRF cookie）、退出 |
+| POST | `/api/auth/register` | 自助注册（默认 viewer；填了邮箱才能找回口令）→ 201，同时下发 cookie 与 CSRF |
+| POST | `/api/auth/forgot` | 给注册邮箱发 6 位验证码（10 分钟有效）；账号或邮箱不存在时 `sent:false`，不泄露差在哪 |
+| POST | `/api/auth/reset` | 验证码 + 新口令改口令；成功后 `token_version+1`，旧令牌立刻失效 |
+| GET | `/api/auth/mode` | 问服务端开没开免密进入：`{"auto_login":false,"auto_user":""}` |
+| POST | `/api/auth/auto` | 免密进入（仅 `SIGNALWATCH_AUTO_LOGIN=1` 时可用，个人单机部署用；写审计 `auth.auto`） |
+| GET/POST | `/api/admin/webhooks` | 事件推送订阅（企业微信/飞书/钉钉群机器人 URL），admin |
+| DELETE | `/api/admin/webhooks/{wid}` | 删一条订阅 |
+| GET/POST | `/api/admin/orgs` | 组织（多租户）列表与新建，admin |
+| DELETE | `/api/admin/orgs/{oid}` | 删组织 |
+| PATCH | `/api/admin/orgs/members` | 把用户挪进/挪出组织 |
 | GET | `/api/auth/me` | 当前用户 |
 | POST | `/api/auth/password` | 自己改口令（改完旧令牌作废）；默认 `admin123` 首次登录必须先改密 |
 
