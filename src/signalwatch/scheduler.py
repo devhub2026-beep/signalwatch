@@ -146,10 +146,12 @@ class Crawler:
 
     # ---- 正文自动补抓 ---------------------------------------------------------
     def _auto_enrich(self, results: list[TickResult]) -> None:
-        """有新闻条目进来就顺手抠几条正文（PDF 文字层），每轮最多 2 条。
+        """有新闻条目进来就顺手抠几条正文，每轮最多 10 条，覆盖所有能用的源。
 
         放在这里而不是定时任务里，是因为「新条目不在时抠旧条目」没有意义：
         抠正文的目的就是让用户点开首屏那条时能看到内容。
+        之前只抓 cninfo，导致 ccgp/ithome/sspai 的正文长期为 0，这里改为覆盖
+        `enrich.SOURCE_KIND` 里 kind != skip 的全部源（arxiv 摘要已在 feed 里，仍跳过）。
         """
         if not any(r.ok and r.inserted for r in results):
             return
@@ -158,7 +160,7 @@ class Crawler:
 
             if admin.get_setting(self.conn, "enrich.auto", "1") != "1":
                 return
-            enrich.enrich(self.conn, limit=2, only=("cninfo",))
+            enrich.enrich(self.conn, limit=10, only=None)
         except Exception:
             pass
 
