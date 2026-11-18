@@ -8,6 +8,12 @@ services:
       - "127.0.0.1:8766:8766"
     environment:
       SIGNALWATCH_HOME: /data
+      # 内部接口给 worker 用；生产环境请换成随机串
+      SIGNALWATCH_INTERNAL_TOKEN: ${SIGNALWATCH_INTERNAL_TOKEN:-change-me-internal}
+      # 缓存与门铃走 Redis（不配就退回进程内缓存 + 轮询）
+      SIGNALWATCH_CACHE: ${SIGNALWATCH_CACHE:-memory}
+      SIGNALWATCH_REDIS: redis:6379
+      SIGNALWATCH_WAKEUP: redis
       SIGNALWATCH_DB: /data/signalwatch.db
       # bind mount 到 Windows 目录时 WAL 会烂库（database disk image is malformed），
       # 退回回滚日志；容器是唯一写者，够用。
@@ -20,6 +26,27 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  # 采集执行器：不挂 /data、不碰数据库，只通过内部接口干活
+  worker:
+    image: signalwatch:0.1.0
+    container_name: signalwatch-worker
+    command: ["signalwatch", "worker", "--remote", "http://signalwatch:8766", "--idle", "2"]
+    environment:
+      SIGNALWATCH_INTERNAL_TOKEN: ${SIGNALWATCH_INTERNAL_TOKEN:-change-me-internal}
+      SIGNALWATCH_REDIS: redis:6379
+      SIGNALWATCH_WAKEUP: redis
+    depends_on:
+      - signalwatch
+      - redis
+    restart: unless-stopped
+
+  # 共享缓存 + 任务门铃
+  redis:
+    image: redis:7-alpine
+    container_name: signalwatch-redis
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    restart: unless-stopped
 
   # 可选：HTTPS 前置，只给手机装 PWA 用；它不写库，库仍然只有 signalwatch 一个写者。
   proxy:

@@ -15,7 +15,7 @@ import signal
 import sqlite3
 import time
 
-from . import admin, audit, dedupe, db, enrich, taxonomy
+from . import admin, audit, dedupe, db, enrich, taxonomy, wakeup
 
 IDLE_SLEEP = 2.0
 
@@ -76,7 +76,11 @@ def loop(conn: sqlite3.Connection, crawler, *, idle: float = IDLE_SLEEP,
         if job is None:
             if max_jobs is not None and done >= max_jobs:
                 break
-            time.sleep(idle)
+            # 有门铃就等门铃（平均省掉半个 idle 的延迟），没门铃就睡
+            if wakeup.enabled():
+                wakeup.wait(idle)
+            else:
+                time.sleep(idle)
             continue
         done += 1
         if max_jobs is not None and done >= max_jobs:

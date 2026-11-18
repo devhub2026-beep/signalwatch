@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import os
 import secrets
 import threading
 import time
@@ -20,10 +21,11 @@ from pydantic import BaseModel, Field
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
-from . import __version__, admin, audit, auth, board, cache, enrich, ingest, maintenance, notify, report, xlsx
+from . import __version__, admin, audit, auth, board, cache, dedupe, enrich, ingest, maintenance, notify, report, taxonomy, xlsx
 from .config import SETTINGS, Settings
 from .db import db_stats, init_db
 from .scheduler import Crawler
+from . import wakeup
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 TOKEN_COOKIE_TTL = 7 * 24 * 3600
@@ -90,6 +92,16 @@ class JobIn(BaseModel):
     priority: int = 0
 
 
+class InternalFinish(BaseModel):
+    ok: bool = True
+    result: str = ""
+    error: str = ""
+
+
+class InternalCrawl(BaseModel):
+    source: str = "all"
+
+
 class RuleIn(BaseModel):
     keyword: str
     category: str = ""
@@ -145,6 +157,11 @@ def _fill_summaries(app: FastAPI) -> int:
     return filled
 
 
+def _scheduler_on() -> bool:
+    """SIGNALWATCH_SCHEDULER=0 时 API 只当 API：抓取交给独立 worker 进程。"""
+    return os.environ.get("SIGNALWATCH_SCHEDULER", "1").strip() not in ("0", "false", "no")
+
+
 def create_app(settings: Settings | None = None, *, autostart: bool = True) -> FastAPI:
     settings = settings or SETTINGS
     crawler = Crawler(settings)
@@ -153,7 +170,7 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
     app.state.crawler = crawler
     app.state.settings = settings
     app.state.crawl_lock = threading.Lock()
-    app.state.cache = cache.TTLCache(maxsize=512)
+    app.state.cache = cache.make_cache(maxsize=512)
     app.state.metrics = {
         "started": time.time(),
         "total": 0,
@@ -255,8 +272,9 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         if auth.seed_admin(crawler.conn):
             audit.log(crawler.conn, "system", "user.seed", "admin", "首次启动，建了默认管理员")
         auth.enforce_default_password_policy(crawler.conn)
-        if autostart:
+        if autostart and _scheduler_on():
             crawler.start()
+        if autostart:
             _start_mail_loop()
             app.state.autobackup = maintenance.AutoBackup(settings)
             app.state.autobackup.start()
@@ -295,6 +313,59 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
             auto.stop()
         crawler.stop()
         crawler.conn.close()
+
+    # ---- 内部接口（给 worker 用：让 worker 不碰库）----------------------------
+    internal_token = os.environ.get("SIGNALWATCH_INTERNAL_TOKEN", "").strip()
+
+    def _internal(request: Request) -> None:
+        given = request.headers.get("x-internal-token", "")
+        if not hmac.compare_digest(given, internal_token):
+            raise HTTPException(status_code=403, detail="内部接口需要 X-Internal-Token")
+
+    if internal_token:
+        @app.get("/api/internal/sources")
+        def internal_sources(request: Request) -> dict:
+            _internal(request)
+            snap = crawler.snapshot()
+            return {"sources": [s.get("name") for s in snap.get("sources", []) if s.get("name")]}
+
+        @app.get("/api/internal/jobs/claim")
+        def internal_claim(request: Request) -> dict:
+            _internal(request)
+            return {"job": admin.claim_job(crawler.conn)}
+
+        @app.post("/api/internal/jobs/{job_id}/finish")
+        def internal_finish(job_id: int, body: "InternalFinish", request: Request) -> dict:
+            _internal(request)
+            try:
+                admin.finish_job(crawler.conn, job_id, ok=body.ok,
+                                 result=body.result, error=body.error)
+            except admin.JobStateError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from None
+            return {"ok": True}
+
+        @app.post("/api/internal/crawl")
+        def internal_crawl(body: "InternalCrawl", request: Request) -> dict:
+            _internal(request)
+            names = ([s.get("name") for s in crawler.snapshot().get("sources", [])]
+                     if body.source == "all" else [body.source])
+            out = {"ok": True, "fetched": 0, "inserted": 0, "parts": []}
+            for name in [n for n in names if n]:
+                try:
+                    res = crawler.run_source(name, force=True)
+                except KeyError as exc:
+                    raise HTTPException(status_code=404, detail=str(exc)) from None
+                if res is None:
+                    continue
+                out["fetched"] += int(res.fetched or 0)
+                out["inserted"] += int(res.inserted or 0)
+                out["ok"] = out["ok"] and bool(res.ok)
+                out["parts"].append(f"{name}:{'ok' if res.ok else 'fail'}")
+            if out["inserted"]:
+                dedupe.mark_duplicates(crawler.conn, limit=200)
+                enrich.enrich(crawler.conn, limit=2, only=("cninfo",))
+            taxonomy.backfill(crawler.conn)
+            return out
 
     # ---- 页面 ----------------------------------------------------------------
     @app.get("/")
@@ -792,6 +863,7 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
         jid = admin.enqueue_job(crawler.conn, body.kind, body.target,
                                 by=actor["username"], priority=body.priority)
         audit.log(crawler.conn, actor["username"], "job.enqueue", f"#{jid}", f"{body.kind} {body.target}")
+        wakeup.notify(jid)          # 配了 Redis 就立刻叫醒 worker，没配就靠 worker 轮询
         return JSONResponse({"id": jid}, status_code=201)
 
     @app.post("/api/admin/jobs/{job_id}/{act}")

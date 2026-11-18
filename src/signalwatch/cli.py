@@ -46,6 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
     wk.add_argument("--once", action="store_true", help="把当前排队的干完就退出")
     wk.add_argument("--idle", type=float, default=2.0, help="没任务时多久看一次（秒）")
     wk.add_argument("--recover", action="store_true", help="启动时把上次中断的 running 任务打回队列")
+    wk.add_argument("--remote", default="", help="远端模式：只通过 API 干活，不碰数据库（如 http://signalwatch:8766）")
+    wk.add_argument("--token", default="", help="远端模式的 X-Internal-Token")
     en = sub.add_parser("enrich", help="把公告 PDF / 网页正文抠进库（默认覆盖所有能用的源）")
     en.add_argument("--limit", type=int, default=5)
     en.add_argument("--source", default="", help="只补这个源；留空=全部可补的源")
@@ -125,6 +127,44 @@ def _cmd_backups(args) -> int:
 def _cmd_worker(args) -> int:
     from . import worker
     from .scheduler import Crawler
+
+    if args.remote:
+        import os
+        from . import wakeup
+        from .remote import RemoteError, RemoteWorker
+
+        token = args.token or os.environ.get("SIGNALWATCH_INTERNAL_TOKEN", "")
+        if not token:
+            print("[错误] 远端模式需要 --token 或 SIGNALWATCH_INTERNAL_TOKEN")
+            return 1
+        rw = RemoteWorker(args.remote, token)
+        stop = [False]
+        worker.install_signals(stop)
+        done, misses = 0, 0
+        while not stop[0]:
+            try:
+                job = rw.run_once()
+            except RemoteError as exc:
+                misses += 1
+                print(f"[warn] {exc}（第 {misses} 次，5 秒后重试）")
+                time.sleep(min(30, 5 * misses))
+                continue
+            misses = 0
+            if job is None:
+                if args.once:
+                    break
+                if wakeup.enabled():
+                    wakeup.wait(args.idle)
+                else:
+                    time.sleep(args.idle)
+                continue
+            done += 1
+            print(f"[ok] 任务 #{job['id']} {job['kind']}:{job.get('target','')} "
+                  f"{job.get('seconds')}s")
+            if args.once:
+                break
+        print(f"[ok] 这次干了 {done} 个任务")
+        return 0
 
     crawler = Crawler()
     conn = crawler.conn
