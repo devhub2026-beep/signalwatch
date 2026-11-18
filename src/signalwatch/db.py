@@ -259,6 +259,12 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
     报 `database disk image is malformed`。所以 Docker 里要设
     SIGNALWATCH_JOURNAL=delete 退回回滚日志（单写者，够用且安全）。
     """
+    # PG 开关：设了 SIGNALWATCH_DB_URL 就走 PostgreSQL，其余仍走 SQLite。
+    pg_url = os.environ.get("SIGNALWATCH_DB_URL")
+    if pg_url:
+        from . import pg
+
+        return pg.connect(pg_url)
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path), timeout=30.0, check_same_thread=False)

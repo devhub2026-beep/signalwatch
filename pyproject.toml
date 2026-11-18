@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.23",
     "defusedxml>=0.7.1",
+    "psycopg2-binary>=2.9",
 ]
 
 [project.scripts]

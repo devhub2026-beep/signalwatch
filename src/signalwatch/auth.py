@@ -15,6 +15,14 @@ import secrets
 import sqlite3
 import time
 
+try:
+    from psycopg2 import IntegrityError as _pg_integrity
+except ImportError:  # SQLite 模式没有 psycopg2，用占位
+    _pg_integrity = sqlite3.IntegrityError
+
+# 唯一约束冲突：兼容 sqlite3 与 psycopg2 两种后端
+_INTEGRITY_ERRORS = (sqlite3.IntegrityError, _pg_integrity)
+
 PBKDF2_ROUNDS = 120_000
 TOKEN_TTL = 7 * 24 * 3600
 ROLES = ("admin", "analyst", "auditor", "viewer")
@@ -175,7 +183,7 @@ def create_user(conn, username: str, password: str, role: str = "viewer", email:
                 (username, salt, digest, role, int(time.time() * 1000), (email or "").strip(),
                  1 if must_change_password else 0),
             )
-        except sqlite3.IntegrityError:
+        except _INTEGRITY_ERRORS:
             raise ValueError(f"用户名已存在：{username}") from None
     return int(cur.lastrowid)
 
