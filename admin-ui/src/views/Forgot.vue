@@ -4,9 +4,9 @@
       <h2 class="title">找回口令</h2>
 
       <el-steps :active="step" simple>
-        <el-step title="填账号" />
-        <el-step title="收验证码" />
-        <el-step title="设新口令" />
+        <el-step title="账号" />
+        <el-step title="验证码" />
+        <el-step title="新口令" />
       </el-steps>
 
       <div v-if="step === 0" class="pane">
