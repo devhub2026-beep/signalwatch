@@ -319,7 +319,20 @@ python run.py serve --host 0.0.0.0 --port 8443 --tls
 手机上的步骤：
 1. 手机和电脑连同一个 Wi-Fi，浏览器开 `https://<电脑局域网IP>:8443`（图标已备好：`icon-192.png`、`icon-512.png`、`apple-touch-icon.png`，`manifest` 里 192/512 与 maskable 都声明了）；
 2. 证书是自签的，会提示「不安全」→ 选「继续访问」；
-3. Chrome/Safari 菜单里「添加到主屏幕 / 安装应用」——这时才真的能装。
+3. 用支持 PWA 的浏览器打开，从菜单里装到主屏——这时才真的能装。
+
+各浏览器怎么装（PWA 要浏览器认 `manifest` + Service Worker，还得把「安装」暴露在菜单里，所以不是所有浏览器都行）：
+
+| 平台 | 浏览器 | 入口 |
+| --- | --- | --- |
+| Android | **Chrome** | 右上角 ⋮ → 「安装应用」/「添加到主屏幕」（多数机型会直接弹横幅） |
+| Android | **Edge** | 右下角 `…` → 「添加到手机」；或在地址栏右侧点安装图标 |
+| Android | **Samsung Internet** | 右下角 ≡ → 「添加页面到」→ 「主屏幕」 |
+| Android | Firefox | 菜单 → 「安装」/「添加到主屏幕」（版本较新才有） |
+| iOS / iPadOS | **Safari**（只有它） | 分享按钮 → 「添加到主屏幕」。iOS 上 Chrome/Edge 用的是 WebKit，加不了主屏 PWA，也拿不到推送权限 |
+| 桌面 | Chrome / Edge | 地址栏右侧的安装图标，或 ⋮ → 「安装 SignalWatch」 |
+
+装不了的：微信内置浏览器、QQ 浏览器、UC、夸克（多数基于 Chromium 但去掉了 `beforeinstallprompt`）、部分厂商自带浏览器。这些照样能看页面，只是没有桌面图标。
 
 自签证书换机器/换 IP 要重新生成（`make_cert.ps1` 会自动把本机所有非虚拟网卡的 IPv4 写进 SAN）。想彻底没有警告，得用受信任的证书（内网 CA 或域名 + Let's Encrypt）。
 
