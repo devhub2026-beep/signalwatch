@@ -577,7 +577,17 @@ def create_app(settings: Settings | None = None, *, autostart: bool = True) -> F
 
     @app.get("/admin")
     def admin_page() -> FileResponse:
-        return FileResponse(WEB_DIR / "admin.html", media_type="text/html; charset=utf-8")
+        # Vue 管理端（构建产物在 web/admin-vue/），旧手写版保留在 web/admin.html 作回滚备份
+        return FileResponse(WEB_DIR / "admin-vue" / "index.html", media_type="text/html; charset=utf-8")
+
+    @app.get("/assets/{path:path}")
+    def vue_assets(path: str) -> FileResponse:
+        """服务 Vue 管理端构建出的 /assets/* 静态资源，带路径遍历防护。"""
+        root = (WEB_DIR / "admin-vue" / "assets").resolve()
+        target = (root / path).resolve()
+        if not str(target).startswith(str(root)):
+            raise HTTPException(status_code=404)
+        return FileResponse(target)
 
     MAX_LOGIN_FAILS = 5
     LOGIN_WINDOW = 300.0

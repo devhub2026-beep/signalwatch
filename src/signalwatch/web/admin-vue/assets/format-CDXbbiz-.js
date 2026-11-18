@@ -1,0 +1,1 @@
+function r(t){if(!t)return"-";const e=new Date(t),n=a=>String(a).padStart(2,"0");return`${e.getFullYear()}-${n(e.getMonth()+1)}-${n(e.getDate())} ${n(e.getHours())}:${n(e.getMinutes())}`}function i(t){return{admin:"管理员",analyst:"分析员",auditor:"审计员",viewer:"只读"}[t]||t||"-"}export{i as a,r as f};
