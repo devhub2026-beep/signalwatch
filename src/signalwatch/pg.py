@@ -94,6 +94,20 @@ def _needs_returning(sql: str) -> bool:
     return m.group(1).lower() in _ID_TABLES
 
 
+class Row(dict):
+    """模拟 sqlite3.Row：同时支持 ``row["name"]`` 和 ``row[0]`` 两种索引。
+
+    sqlite3.Row 既可用列名也可用整数下标取列，而 psycopg2 的
+    RealDictRow 只支持列名；业务代码里存在 ``row[0]`` 的写法
+    （如 auth._secret），这里统一补齐。
+    """
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            key = list(self.keys())[key]
+        return dict.__getitem__(self, key)
+
+
 class PGCursor:
     """psycopg2 游标的薄封装，模拟 sqlite3.Cursor 的关键接口。"""
 
@@ -123,13 +137,14 @@ class PGCursor:
         return self
 
     def fetchone(self):
-        return self._raw.fetchone()
+        row = self._raw.fetchone()
+        return Row(row) if row is not None else None
 
     def fetchall(self):
-        return self._raw.fetchall()
+        return [Row(r) for r in self._raw.fetchall()]
 
     def __iter__(self):
-        return iter(self._raw.fetchall())
+        return iter(self.fetchall())
 
     @property
     def rowcount(self) -> int:
