@@ -25,5 +25,8 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-signalwatch = ["web/*.html", "web/*.webmanifest", "web/*.js", "web/*.css", "web/*.png"]
+signalwatch = [
+    "web/*.html", "web/*.webmanifest", "web/*.js", "web/*.css", "web/*.png",
+    "web/admin-vue/**/*",
+]
 
